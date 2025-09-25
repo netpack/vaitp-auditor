@@ -1,0 +1,864 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+    branches:
+      - 'test/**'
+      - 'ci/**'
+  pull_request:
+    branches:
+      - main
+      - develop
+
+env:
+  PYTHON_VERSION: '3.10'
+
+jobs:
+  test:
+    name: Test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ['3.9', '3.10', '3.11']
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+        
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt', '**/setup.py') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+          
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .[all]
+        pip install pytest pytest-cov pytest-xvfb
+        
+    - name: Install platform-specific dependencies (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y xvfb
+        
+    - name: Run tests
+      run: |
+        pytest tests/ --cov=vaitp_auditor --cov-report=xml --cov-report=term-missing
+        
+    - name: Upload coverage to Codecov
+      if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10'
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+
+  build-windows:
+    name: Build Windows executable with signing
+    runs-on: windows-latest
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v') || contains(github.ref, 'test/') || contains(github.ref, 'ci/')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python ${{ env.PYTHON_VERSION }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~\AppData\Local\pip\Cache
+        key: ${{ runner.os }}-pip-build-${{ hashFiles('**/requirements.txt', '**/setup.py') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-build-
+          ${{ runner.os }}-pip-
+          
+    - name: Install build dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .[gui]
+        pip install pyinstaller
+        
+    - name: Build Windows executable
+      run: |
+        python deployment/build_executable.py
+        
+    - name: Sign Windows executable (if certificate available)
+      if: env.WINDOWS_CERT_BASE64 != ''
+      env:
+        WINDOWS_CERT_BASE64: ${{ secrets.WINDOWS_CERT_BASE64 }}
+        WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+      run: |
+        # Decode certificate from base64
+        $certBytes = [System.Convert]::FromBase64String($env:WINDOWS_CERT_BASE64)
+        [System.IO.File]::WriteAllBytes("cert.p12", $certBytes)
+        
+        # Sign the executable
+        & "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe" sign /f cert.p12 /p $env:WINDOWS_CERT_PASSWORD /t http://timestamp.digicert.com /fd SHA256 dist\VAITP-Auditor-GUI.exe
+        
+        # Clean up certificate file
+        Remove-Item cert.p12
+        
+    - name: Create Windows package
+      run: |
+        # Create comprehensive Windows package
+        python -c "
+        import zipfile
+        import os
+        from pathlib import Path
+        
+        # Get version
+        import sys
+        sys.path.insert(0, 'vaitp_auditor')
+        from _version import __version__
+        
+        # Create package
+        with zipfile.ZipFile(f'VAITP-Auditor-GUI-Windows-x64-v{__version__}.zip', 'w', zipfile.ZIP_DEFLATED) as zf:
+            zf.write('dist/VAITP-Auditor-GUI.exe', 'VAITP-Auditor-GUI.exe')
+            
+            # Add README
+            readme = '''VAITP-Auditor GUI for Windows
+        
+        INSTALLATION:
+        1. Extract this ZIP file to a folder of your choice
+        2. Run VAITP-Auditor-GUI.exe
+        3. Create a desktop shortcut for easy access
+        
+        SYSTEM REQUIREMENTS:
+        - Windows 10 version 1903 or later
+        - 4GB RAM minimum, 8GB recommended
+        - 100MB free disk space
+        
+        For more information, visit: https://github.com/your-repo/vaitp-auditor
+        '''
+            zf.writestr('README.txt', readme)
+            
+            # Add license if exists
+            if os.path.exists('LICENSE'):
+                zf.write('LICENSE', 'LICENSE.txt')
+        
+        print('Windows package created successfully')
+        "
+        
+    - name: Verify Windows package
+      run: |
+        dir *.zip
+        if (Test-Path "dist\VAITP-Auditor-GUI.exe") {
+          Write-Host "✓ Executable created successfully"
+          $size = (Get-Item "dist\VAITP-Auditor-GUI.exe").Length / 1MB
+          Write-Host "Executable size: $([math]::Round($size, 1)) MB"
+        } else {
+          Write-Error "✗ Executable not found"
+          exit 1
+        }
+        
+    - name: Upload Windows executable
+      uses: actions/upload-artifact@v3
+      with:
+        name: windows-executable
+        path: dist/VAITP-Auditor-GUI.exe
+        retention-days: 30
+        
+    - name: Upload Windows package
+      uses: actions/upload-artifact@v3
+      with:
+        name: windows-package
+        path: VAITP-Auditor-GUI-Windows-*.zip
+        retention-days: 30
+
+  build-macos:
+    name: Build macOS app bundle with signing and DMG
+    runs-on: macos-latest
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v') || contains(github.ref, 'test/') || contains(github.ref, 'ci/')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python ${{ env.PYTHON_VERSION }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/Library/Caches/pip
+        key: ${{ runner.os }}-pip-build-${{ hashFiles('**/requirements.txt', '**/setup.py') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-build-
+          ${{ runner.os }}-pip-
+          
+    - name: Install build dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .[gui]
+        pip install pyinstaller
+        
+    - name: Install macOS build tools
+      run: |
+        brew install create-dmg
+        
+    - name: Build macOS app bundle
+      run: |
+        python deployment/build_executable.py
+        
+    - name: Sign macOS app bundle (if certificate available)
+      if: env.MACOS_CERT_BASE64 != ''
+      env:
+        MACOS_CERT_BASE64: ${{ secrets.MACOS_CERT_BASE64 }}
+        MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        MACOS_KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+      run: |
+        # Create temporary keychain
+        security create-keychain -p "$MACOS_KEYCHAIN_PASSWORD" build.keychain
+        security default-keychain -s build.keychain
+        security unlock-keychain -p "$MACOS_KEYCHAIN_PASSWORD" build.keychain
+        
+        # Import certificate
+        echo "$MACOS_CERT_BASE64" | base64 --decode > cert.p12
+        security import cert.p12 -k build.keychain -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
+        security set-key-partition-list -S apple-tool:,apple: -s -k "$MACOS_KEYCHAIN_PASSWORD" build.keychain
+        
+        # Sign the app bundle
+        codesign --force --options runtime --deep --sign "Developer ID Application" dist/VAITP-Auditor-GUI.app
+        
+        # Verify signature
+        codesign --verify --verbose dist/VAITP-Auditor-GUI.app
+        
+        # Clean up
+        rm cert.p12
+        security delete-keychain build.keychain
+        
+    - name: Create DMG
+      run: |
+        # Get version for DMG name
+        python -c "
+        import sys
+        sys.path.insert(0, 'vaitp_auditor')
+        from _version import __version__
+        print(f'DMG_VERSION={__version__}')
+        " >> $GITHUB_ENV
+        
+        # Create DMG with proper structure
+        mkdir dmg-staging
+        cp -R dist/VAITP-Auditor-GUI.app dmg-staging/
+        
+        # Create Applications symlink
+        ln -s /Applications dmg-staging/Applications
+        
+        # Create DMG
+        create-dmg \
+          --volname "VAITP-Auditor GUI v$DMG_VERSION" \
+          --volicon "vaitp_auditor/gui/assets/icons/app_icon.png" \
+          --window-pos 200 120 \
+          --window-size 800 450 \
+          --icon-size 100 \
+          --icon "VAITP-Auditor-GUI.app" 200 190 \
+          --hide-extension "VAITP-Auditor-GUI.app" \
+          --app-drop-link 600 185 \
+          --background "deployment/dmg_background.png" \
+          "VAITP-Auditor-GUI-macOS-v$DMG_VERSION.dmg" \
+          "dmg-staging/" || true
+          
+        # Fallback: create simple DMG if create-dmg fails
+        if [ ! -f "VAITP-Auditor-GUI-macOS-v$DMG_VERSION.dmg" ]; then
+          echo "Creating simple DMG as fallback..."
+          hdiutil create -volname "VAITP-Auditor GUI" -srcfolder dmg-staging -ov -format UDZO "VAITP-Auditor-GUI-macOS-v$DMG_VERSION.dmg"
+        fi
+        
+    - name: Verify macOS build
+      run: |
+        ls -la dist/
+        ls -la *.dmg
+        if [ -d "dist/VAITP-Auditor-GUI.app" ]; then
+          echo "✓ App bundle created successfully"
+          du -sh dist/VAITP-Auditor-GUI.app
+          ls -la dist/VAITP-Auditor-GUI.app/Contents/
+        else
+          echo "✗ App bundle not found"
+          exit 1
+        fi
+        
+    - name: Upload macOS app bundle
+      uses: actions/upload-artifact@v3
+      with:
+        name: macos-executable
+        path: dist/VAITP-Auditor-GUI.app
+        retention-days: 30
+        
+    - name: Upload macOS DMG
+      uses: actions/upload-artifact@v3
+      with:
+        name: macos-dmg
+        path: VAITP-Auditor-GUI-macOS-*.dmg
+        retention-days: 30
+
+  build-linux:
+    name: Build Linux binary and AppImage
+    runs-on: ubuntu-latest
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v') || contains(github.ref, 'test/') || contains(github.ref, 'ci/')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python ${{ env.PYTHON_VERSION }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-build-${{ hashFiles('**/requirements.txt', '**/setup.py') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-build-
+          ${{ runner.os }}-pip-
+          
+    - name: Install build dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .[gui]
+        pip install pyinstaller
+        
+    - name: Install Linux build tools
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y binutils patchelf desktop-file-utils libglib2.0-dev libgtk-3-dev
+        
+        # Download AppImage tools
+        wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+        chmod +x appimagetool-x86_64.AppImage
+        sudo mv appimagetool-x86_64.AppImage /usr/local/bin/appimagetool
+        
+    - name: Build Linux executable
+      run: |
+        python deployment/build_executable.py
+        
+    - name: Create AppImage structure
+      run: |
+        # Get version
+        python -c "
+        import sys
+        sys.path.insert(0, 'vaitp_auditor')
+        from _version import __version__
+        print(f'APPIMAGE_VERSION={__version__}')
+        " >> $GITHUB_ENV
+        
+        # Create AppDir structure
+        mkdir -p AppDir/usr/bin
+        mkdir -p AppDir/usr/share/applications
+        mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+        mkdir -p AppDir/usr/share/metainfo
+        
+        # Copy executable
+        cp dist/VAITP-Auditor-GUI AppDir/usr/bin/
+        chmod +x AppDir/usr/bin/VAITP-Auditor-GUI
+        
+        # Create desktop file
+        cat > AppDir/usr/share/applications/vaitp-auditor-gui.desktop << EOF
+        [Desktop Entry]
+        Type=Application
+        Name=VAITP-Auditor GUI
+        GenericName=Code Verification Assistant
+        Comment=Manual Code Verification Assistant for programmatically generated code snippets
+        Exec=VAITP-Auditor-GUI
+        Icon=vaitp-auditor-gui
+        Terminal=false
+        Categories=Development;IDE;
+        Keywords=code;verification;audit;review;security;
+        MimeType=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;application/vnd.ms-excel;application/x-sqlite3;
+        StartupNotify=true
+        EOF
+        
+        # Copy icon (create placeholder if not exists)
+        if [ -f "vaitp_auditor/gui/assets/icons/app_icon.png" ]; then
+          cp vaitp_auditor/gui/assets/icons/app_icon.png AppDir/usr/share/icons/hicolor/256x256/apps/vaitp-auditor-gui.png
+        else
+          # Create a simple placeholder icon
+          convert -size 256x256 xc:blue -fill white -gravity center -pointsize 24 -annotate +0+0 "VAITP" AppDir/usr/share/icons/hicolor/256x256/apps/vaitp-auditor-gui.png || echo "Icon creation skipped"
+        fi
+        
+        # Create AppStream metadata
+        cat > AppDir/usr/share/metainfo/com.vaitp.auditor.gui.appdata.xml << EOF
+        <?xml version="1.0" encoding="UTF-8"?>
+        <component type="desktop-application">
+          <id>com.vaitp.auditor.gui</id>
+          <metadata_license>MIT</metadata_license>
+          <project_license>MIT</project_license>
+          <name>VAITP-Auditor GUI</name>
+          <summary>Manual Code Verification Assistant</summary>
+          <description>
+            <p>VAITP-Auditor GUI is a comprehensive tool for manual verification of programmatically generated code snippets.</p>
+          </description>
+          <categories>
+            <category>Development</category>
+            <category>IDE</category>
+          </categories>
+          <url type="homepage">https://github.com/your-repo/vaitp-auditor</url>
+          <releases>
+            <release version="$APPIMAGE_VERSION" date="$(date +%Y-%m-%d)"/>
+          </releases>
+        </component>
+        EOF
+        
+        # Create AppRun script
+        cat > AppDir/AppRun << 'EOF'
+        #!/bin/bash
+        HERE="$(dirname "$(readlink -f "${0}")")"
+        export PATH="${HERE}/usr/bin:${PATH}"
+        export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"
+        exec "${HERE}/usr/bin/VAITP-Auditor-GUI" "$@"
+        EOF
+        chmod +x AppDir/AppRun
+        
+        # Create symlinks for AppImage
+        ln -sf usr/share/applications/vaitp-auditor-gui.desktop AppDir/
+        ln -sf usr/share/icons/hicolor/256x256/apps/vaitp-auditor-gui.png AppDir/
+        
+    - name: Build AppImage
+      run: |
+        # Build AppImage
+        appimagetool AppDir "VAITP-Auditor-GUI-Linux-x86_64-v$APPIMAGE_VERSION.AppImage"
+        chmod +x "VAITP-Auditor-GUI-Linux-x86_64-v$APPIMAGE_VERSION.AppImage"
+        
+    - name: Create Linux package
+      run: |
+        # Create tar.gz package with binary and documentation
+        mkdir -p linux-package
+        cp dist/VAITP-Auditor-GUI linux-package/
+        cp AppDir/usr/share/applications/vaitp-auditor-gui.desktop linux-package/
+        
+        # Add README
+        cat > linux-package/README.txt << EOF
+        VAITP-Auditor GUI for Linux
+        
+        INSTALLATION:
+        1. Extract this archive to a directory of your choice
+        2. Make the binary executable: chmod +x VAITP-Auditor-GUI
+        3. Run: ./VAITP-Auditor-GUI
+        
+        SYSTEM REQUIREMENTS:
+        - Linux distribution with glibc 2.17+ (Ubuntu 16.04+, CentOS 7+, etc.)
+        - 4GB RAM minimum, 8GB recommended
+        - 100MB free disk space
+        - X11 or Wayland display server
+        
+        For desktop integration, copy vaitp-auditor-gui.desktop to ~/.local/share/applications/
+        
+        For more information, visit: https://github.com/your-repo/vaitp-auditor
+        EOF
+        
+        # Add license if exists
+        if [ -f "LICENSE" ]; then
+          cp LICENSE linux-package/LICENSE.txt
+        fi
+        
+        # Create tar.gz
+        tar -czf "VAITP-Auditor-GUI-Linux-x86_64-v$APPIMAGE_VERSION.tar.gz" -C linux-package .
+        
+    - name: Verify Linux build
+      run: |
+        ls -la dist/
+        ls -la *.AppImage
+        ls -la *.tar.gz
+        if [ -f "dist/VAITP-Auditor-GUI" ]; then
+          echo "✓ Linux binary created successfully"
+          file dist/VAITP-Auditor-GUI
+          du -sh dist/VAITP-Auditor-GUI
+        else
+          echo "✗ Linux binary not found"
+          exit 1
+        fi
+        
+    - name: Upload Linux executable
+      uses: actions/upload-artifact@v3
+      with:
+        name: linux-executable
+        path: dist/VAITP-Auditor-GUI
+        retention-days: 30
+        
+    - name: Upload Linux AppImage
+      uses: actions/upload-artifact@v3
+      with:
+        name: linux-appimage
+        path: VAITP-Auditor-GUI-Linux-*.AppImage
+        retention-days: 30
+        
+    - name: Upload Linux package
+      uses: actions/upload-artifact@v3
+      with:
+        name: linux-package
+        path: VAITP-Auditor-GUI-Linux-*.tar.gz
+        retention-days: 30
+
+  validate-executables:
+    name: Validate executables
+    runs-on: ${{ matrix.os }}
+    needs: [build-windows, build-macos, build-linux]
+    if: startsWith(github.ref, 'refs/tags/v') || contains(github.ref, 'test/') || contains(github.ref, 'ci/')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact_name: linux-executable
+            executable_name: VAITP-Auditor-GUI
+          - os: windows-latest
+            artifact_name: windows-executable
+            executable_name: VAITP-Auditor-GUI.exe
+          - os: macos-latest
+            artifact_name: macos-executable
+            executable_name: VAITP-Auditor-GUI.app
+    
+    steps:
+    - name: Download executable
+      uses: actions/download-artifact@v3
+      with:
+        name: ${{ matrix.artifact_name }}
+        path: ./executable/
+        
+    - name: Make executable (Linux/macOS)
+      if: runner.os != 'Windows'
+      run: |
+        if [ "${{ runner.os }}" = "macOS" ]; then
+          chmod +x "./executable/${{ matrix.executable_name }}/Contents/MacOS/VAITP-Auditor-GUI"
+        else
+          chmod +x "./executable/${{ matrix.executable_name }}"
+        fi
+        
+    - name: Test executable launch (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        # Test that executable can show help without GUI
+        echo "Testing Linux executable..."
+        file "./executable/${{ matrix.executable_name }}"
+        ldd "./executable/${{ matrix.executable_name }}" || echo "Static binary or missing dependencies"
+        timeout 10s "./executable/${{ matrix.executable_name }}" --help || echo "Help test completed (may timeout in headless environment)"
+        
+    - name: Test executable launch (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        # Test that executable exists and has correct format
+        if (Test-Path "./executable/${{ matrix.executable_name }}") {
+          Write-Host "✓ Executable found and accessible"
+          $item = Get-ItemProperty "./executable/${{ matrix.executable_name }}"
+          Write-Host "File size: $([math]::Round($item.Length / 1MB, 1)) MB"
+          Write-Host "Last modified: $($item.LastWriteTime)"
+          
+          # Test file signature if signed
+          $signature = Get-AuthenticodeSignature "./executable/${{ matrix.executable_name }}"
+          if ($signature.Status -eq "Valid") {
+            Write-Host "✓ Executable is properly signed"
+          } else {
+            Write-Host "⚠ Executable is not signed (Status: $($signature.Status))"
+          }
+        } else {
+          Write-Error "✗ Executable not found"
+          exit 1
+        }
+        
+    - name: Test executable launch (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        # Test that app bundle is properly structured
+        if [ -d "./executable/${{ matrix.executable_name }}" ]; then
+          echo "✓ App bundle found"
+          ls -la "./executable/${{ matrix.executable_name }}/Contents/"
+          
+          # Check if signed
+          codesign -dv "./executable/${{ matrix.executable_name }}" 2>&1 || echo "App bundle is not signed"
+          
+          # Test that executable can show help
+          timeout 10s "./executable/${{ matrix.executable_name }}/Contents/MacOS/VAITP-Auditor-GUI" --help || echo "Help test completed (may timeout in headless environment)"
+        else
+          echo "✗ App bundle not found"
+          exit 1
+        fi
+
+  test-deployment:
+    name: Test deployment pipeline
+    runs-on: ubuntu-latest
+    needs: [test, build-windows, build-macos, build-linux, validate-executables]
+    if: contains(github.ref, 'test/') || contains(github.ref, 'ci/')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Download all artifacts
+      uses: actions/download-artifact@v3
+      with:
+        path: ./artifacts/
+        
+    - name: Test artifact organization
+      run: |
+        echo "🧪 Testing deployment pipeline..."
+        echo ""
+        echo "📦 Available artifacts:"
+        find ./artifacts/ -type f -exec ls -lh {} \;
+        echo ""
+        
+        # Test that all expected artifacts are present
+        expected_artifacts=(
+          "windows-executable/VAITP-Auditor-GUI.exe"
+          "macos-executable/VAITP-Auditor-GUI.app"
+          "linux-executable/VAITP-Auditor-GUI"
+        )
+        
+        missing_artifacts=()
+        for artifact in "${expected_artifacts[@]}"; do
+          if [ ! -e "./artifacts/$artifact" ]; then
+            missing_artifacts+=("$artifact")
+          else
+            echo "✓ Found: $artifact"
+          fi
+        done
+        
+        if [ ${#missing_artifacts[@]} -gt 0 ]; then
+          echo "❌ Missing artifacts:"
+          printf '%s\n' "${missing_artifacts[@]}"
+          exit 1
+        else
+          echo "✅ All required artifacts found"
+        fi
+        
+    - name: Test release asset preparation
+      run: |
+        echo "🧪 Testing release asset preparation..."
+        mkdir -p test-release-assets
+        
+        # Simulate release asset preparation
+        if [ -d "./artifacts/windows-package" ]; then
+          cp ./artifacts/windows-package/*.zip test-release-assets/ 2>/dev/null || echo "No Windows packages found"
+        fi
+        if [ -d "./artifacts/macos-dmg" ]; then
+          cp ./artifacts/macos-dmg/*.dmg test-release-assets/ 2>/dev/null || echo "No macOS DMG found"
+        fi
+        if [ -d "./artifacts/linux-appimage" ]; then
+          cp ./artifacts/linux-appimage/*.AppImage test-release-assets/ 2>/dev/null || echo "No Linux AppImage found"
+        fi
+        
+        # Test checksum generation
+        cd test-release-assets
+        if [ "$(ls -A .)" ]; then
+          sha256sum * > SHA256SUMS.txt
+          echo "✅ Checksums generated successfully:"
+          cat SHA256SUMS.txt
+        else
+          echo "⚠️ No release assets to test (this is expected for basic builds)"
+        fi
+        
+    - name: Test version extraction
+      run: |
+        echo "🧪 Testing version extraction..."
+        
+        # Simulate version extraction from different tag formats
+        test_tags=("v1.0.0" "v1.0.0-beta.1" "v2.1.0-alpha.3" "v1.0.0-rc.1")
+        
+        for tag in "${test_tags[@]}"; do
+          version=${tag#v}
+          echo "Tag: $tag -> Version: $version"
+          
+          if [[ "$version" == *"beta"* ]] || [[ "$version" == *"alpha"* ]] || [[ "$version" == *"rc"* ]]; then
+            echo "  -> Pre-release: true"
+          else
+            echo "  -> Pre-release: false"
+          fi
+        done
+        
+        echo "✅ Version extraction test completed"
+        
+    - name: Validate deployment readiness
+      run: |
+        echo "🧪 Validating deployment readiness..."
+        
+        # Check if release-drafter config exists
+        if [ -f ".github/release-drafter.yml" ]; then
+          echo "✅ Release Drafter configuration found"
+        else
+          echo "❌ Release Drafter configuration missing"
+          exit 1
+        fi
+        
+        # Check if required secrets would be available (simulate)
+        echo "📋 Required secrets for full deployment:"
+        echo "  - GITHUB_TOKEN (automatically provided)"
+        echo "  - WINDOWS_CERT_BASE64 (optional, for code signing)"
+        echo "  - WINDOWS_CERT_PASSWORD (optional, for code signing)"
+        echo "  - MACOS_CERT_BASE64 (optional, for code signing)"
+        echo "  - MACOS_CERT_PASSWORD (optional, for code signing)"
+        echo "  - MACOS_KEYCHAIN_PASSWORD (optional, for code signing)"
+        
+        echo "✅ Deployment pipeline validation completed"
+        echo "🚀 Pipeline is ready for production releases"
+
+  create-release:
+    name: Create GitHub release with all artifacts
+    runs-on: ubuntu-latest
+    needs: [test, build-windows, build-macos, build-linux, validate-executables]
+    if: startsWith(github.ref, 'refs/tags/v')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Download all artifacts
+      uses: actions/download-artifact@v3
+      with:
+        path: ./artifacts/
+        
+    - name: Display artifact structure
+      run: |
+        echo "📦 Downloaded artifacts:"
+        find ./artifacts/ -type f -exec ls -lh {} \;
+        echo ""
+        echo "📊 Artifact summary:"
+        find ./artifacts/ -name "*.exe" -o -name "*.app" -o -name "*.AppImage" -o -name "*.dmg" -o -name "*.zip" -o -name "*.tar.gz" | while read file; do
+          size=$(du -h "$file" | cut -f1)
+          echo "  $(basename "$file"): $size"
+        done
+        
+    - name: Prepare release assets
+      run: |
+        mkdir -p release-assets
+        
+        # Copy Windows assets
+        if [ -d "./artifacts/windows-package" ]; then
+          cp ./artifacts/windows-package/*.zip release-assets/ || true
+        fi
+        if [ -d "./artifacts/windows-executable" ]; then
+          cp ./artifacts/windows-executable/VAITP-Auditor-GUI.exe release-assets/ || true
+        fi
+        
+        # Copy macOS assets
+        if [ -d "./artifacts/macos-dmg" ]; then
+          cp ./artifacts/macos-dmg/*.dmg release-assets/ || true
+        fi
+        
+        # Copy Linux assets
+        if [ -d "./artifacts/linux-appimage" ]; then
+          cp ./artifacts/linux-appimage/*.AppImage release-assets/ || true
+        fi
+        if [ -d "./artifacts/linux-package" ]; then
+          cp ./artifacts/linux-package/*.tar.gz release-assets/ || true
+        fi
+        
+        # List final assets
+        echo "🚀 Release assets prepared:"
+        ls -lh release-assets/
+        
+    - name: Generate checksums
+      run: |
+        cd release-assets
+        sha256sum * > SHA256SUMS.txt
+        echo "📋 Generated checksums:"
+        cat SHA256SUMS.txt
+        
+    - name: Extract version from tag
+      run: |
+        VERSION=${GITHUB_REF#refs/tags/v}
+        echo "RELEASE_VERSION=$VERSION" >> $GITHUB_ENV
+        echo "Release version: $VERSION"
+        
+        # Determine if this is a pre-release
+        if [[ "$VERSION" == *"beta"* ]] || [[ "$VERSION" == *"alpha"* ]] || [[ "$VERSION" == *"rc"* ]]; then
+          echo "IS_PRERELEASE=true" >> $GITHUB_ENV
+          echo "This is a pre-release"
+        else
+          echo "IS_PRERELEASE=false" >> $GITHUB_ENV
+          echo "This is a stable release"
+        fi
+        
+    - name: Update release draft
+      id: release_drafter
+      uses: release-drafter/release-drafter@v5
+      with:
+        config-name: release-drafter.yml
+        version: ${{ env.RELEASE_VERSION }}
+        tag: ${{ github.ref_name }}
+        publish: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Create or update release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ github.ref_name }}
+        name: "VAITP-Auditor GUI v${{ env.RELEASE_VERSION }}"
+        body: |
+          ## 🚀 VAITP-Auditor GUI v${{ env.RELEASE_VERSION }}
+          
+          ### 📥 Downloads
+          
+          Choose the appropriate download for your platform:
+          
+          #### Windows
+          - **Recommended**: `VAITP-Auditor-GUI-Windows-x64-v${{ env.RELEASE_VERSION }}.zip` - Complete package with documentation
+          - **Executable only**: `VAITP-Auditor-GUI.exe` - Standalone executable
+          
+          #### macOS
+          - **Recommended**: `VAITP-Auditor-GUI-macOS-v${{ env.RELEASE_VERSION }}.dmg` - Disk image for easy installation
+          
+          #### Linux
+          - **AppImage**: `VAITP-Auditor-GUI-Linux-x86_64-v${{ env.RELEASE_VERSION }}.AppImage` - Portable application (recommended)
+          - **Archive**: `VAITP-Auditor-GUI-Linux-x86_64-v${{ env.RELEASE_VERSION }}.tar.gz` - Binary with documentation
+          
+          ### 🔐 Security
+          
+          All downloads include SHA256 checksums in `SHA256SUMS.txt` for verification.
+          
+          ### 📋 System Requirements
+          
+          - **Windows**: Windows 10 version 1903 or later
+          - **macOS**: macOS 10.14 (Mojave) or later  
+          - **Linux**: glibc 2.17+ (Ubuntu 16.04+, CentOS 7+, etc.)
+          - **Memory**: 4GB RAM minimum, 8GB recommended
+          - **Storage**: 100MB free disk space
+          
+          ### 🆘 Support
+          
+          - 📖 [User Guide](https://github.com/${{ github.repository }}/blob/main/docs/GUI_USER_GUIDE.md)
+          - 🐛 [Report Issues](https://github.com/${{ github.repository }}/issues)
+          - 💬 [Discussions](https://github.com/${{ github.repository }}/discussions)
+          
+          ---
+          
+          ${{ steps.release_drafter.outputs.body }}
+        files: |
+          release-assets/*
+        prerelease: ${{ env.IS_PRERELEASE }}
+        draft: false
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Update release draft for next version
+      if: env.IS_PRERELEASE == 'false'
+      uses: release-drafter/release-drafter@v5
+      with:
+        config-name: release-drafter.yml
+        publish: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,298 @@
+name-template: 'v$RESOLVED_VERSION'
+tag-template: 'v$RESOLVED_VERSION'
+
+categories:
+  - title: '🚀 New Features'
+    labels:
+      - 'feature'
+      - 'enhancement'
+      - 'feat'
+  - title: '🐛 Bug Fixes'
+    labels:
+      - 'fix'
+      - 'bugfix'
+      - 'bug'
+  - title: '⚡ Performance Improvements'
+    labels:
+      - 'performance'
+      - 'perf'
+      - 'optimization'
+  - title: '🔒 Security Updates'
+    labels:
+      - 'security'
+      - 'vulnerability'
+  - title: '🧰 Maintenance & Refactoring'
+    labels:
+      - 'chore'
+      - 'refactor'
+      - 'cleanup'
+      - 'maintenance'
+  - title: '📦 Dependencies'
+    labels:
+      - 'dependencies'
+      - 'deps'
+  - title: '📚 Documentation'
+    labels:
+      - 'documentation'
+      - 'docs'
+  - title: '🔧 Build & CI/CD'
+    labels:
+      - 'build'
+      - 'ci'
+      - 'cd'
+      - 'deployment'
+  - title: '🎨 UI/UX Improvements'
+    labels:
+      - 'ui'
+      - 'ux'
+      - 'design'
+      - 'accessibility'
+
+change-template: '- $TITLE @$AUTHOR (#$NUMBER)'
+
+change-title-escapes: '\<*_&' # You can add # and @ to disable mentions, and add ` to disable code blocks.
+
+version-resolver:
+  major:
+    labels:
+      - 'major'
+      - 'breaking'
+      - 'breaking-change'
+  minor:
+    labels:
+      - 'minor'
+      - 'feature'
+      - 'enhancement'
+      - 'feat'
+  patch:
+    labels:
+      - 'patch'
+      - 'fix'
+      - 'bugfix'
+      - 'bug'
+      - 'chore'
+      - 'dependencies'
+      - 'deps'
+      - 'maintenance'
+      - 'documentation'
+      - 'docs'
+      - 'security'
+      - 'performance'
+      - 'perf'
+  default: patch
+
+# Pre-release configuration
+prerelease-identifier: 'beta'
+include-pre-releases: true
+
+template: |
+  ## What's New in v$RESOLVED_VERSION
+
+  $CHANGES
+
+  ## 📥 Installation Options
+
+  ### 🖥️ Standalone Executables (Recommended)
+  
+  Download and run immediately - no Python installation required:
+  
+  | Platform | Download | Notes |
+  |----------|----------|-------|
+  | **Windows** | `VAITP-Auditor-GUI-Windows-x64-v$RESOLVED_VERSION.zip` | Complete package with documentation |
+  | **macOS** | `VAITP-Auditor-GUI-macOS-v$RESOLVED_VERSION.dmg` | Drag to Applications folder |
+  | **Linux** | `VAITP-Auditor-GUI-Linux-x86_64-v$RESOLVED_VERSION.AppImage` | Make executable and run |
+
+  ### 🐍 Python Package
+  
+  For developers and advanced users:
+  
+  ```bash
+  pip install vaitp-auditor[gui]
+  vaitp-auditor-gui
+  ```
+
+  ## 📋 System Requirements
+  
+  | Component | Minimum | Recommended |
+  |-----------|---------|-------------|
+  | **OS** | Windows 10 1903+ / macOS 10.14+ / Linux glibc 2.17+ | Latest stable versions |
+  | **Memory** | 4GB RAM | 8GB RAM |
+  | **Storage** | 100MB free space | 500MB free space |
+  | **Display** | 1024x768 | 1920x1080+ |
+
+  ## 🔐 Security & Verification
+  
+  - All executables include SHA256 checksums for verification
+  - Windows and macOS executables are code-signed when certificates are available
+  - Source code is available for security auditing
+
+  ## 🆘 Getting Help
+  
+  - 📖 **User Guide**: [GUI User Guide](https://github.com/$OWNER/$REPOSITORY/blob/main/docs/GUI_USER_GUIDE.md)
+  - 🐛 **Report Issues**: [GitHub Issues](https://github.com/$OWNER/$REPOSITORY/issues)
+  - 💬 **Discussions**: [GitHub Discussions](https://github.com/$OWNER/$REPOSITORY/discussions)
+  - 📧 **Email**: support@vaitp-auditor.com
+
+  ---
+
+  **Full Changelog**: https://github.com/$OWNER/$REPOSITORY/compare/$PREVIOUS_TAG...v$RESOLVED_VERSION
+
+exclude-labels:
+  - 'skip-changelog'
+  - 'duplicate'
+  - 'question'
+  - 'invalid'
+  - 'wontfix'
+
+autolabeler:
+  # Documentation changes
+  - label: 'documentation'
+    files:
+      - '*.md'
+      - 'docs/**/*'
+      - '**/*.md'
+    title:
+      - '/docs?/i'
+      - '/documentation/i'
+      - '/readme/i'
+  
+  # Bug fixes
+  - label: 'bug'
+    branch:
+      - '/fix\/.+/'
+      - '/bugfix\/.+/'
+      - '/hotfix\/.+/'
+    title:
+      - '/fix/i'
+      - '/bug/i'
+      - '/hotfix/i'
+      - '/patch/i'
+  
+  # New features
+  - label: 'feature'
+    branch:
+      - '/feature\/.+/'
+      - '/feat\/.+/'
+    title:
+      - '/feature/i'
+      - '/feat/i'
+      - '/add/i'
+      - '/implement/i'
+  
+  # Enhancements
+  - label: 'enhancement'
+    branch:
+      - '/enhance\/.+/'
+      - '/improve\/.+/'
+    title:
+      - '/enhance/i'
+      - '/improve/i'
+      - '/upgrade/i'
+      - '/update/i'
+  
+  # Performance improvements
+  - label: 'performance'
+    title:
+      - '/perf/i'
+      - '/performance/i'
+      - '/optimize/i'
+      - '/speed/i'
+    files:
+      - '**/performance*.py'
+      - '**/optimization*.py'
+  
+  # Security updates
+  - label: 'security'
+    title:
+      - '/security/i'
+      - '/vulnerability/i'
+      - '/cve/i'
+    files:
+      - '**/security*.py'
+  
+  # UI/UX changes
+  - label: 'ui'
+    files:
+      - '**/gui/**/*'
+      - '**/ui/**/*'
+      - '**/*gui*.py'
+      - '**/*ui*.py'
+    title:
+      - '/ui/i'
+      - '/gui/i'
+      - '/interface/i'
+      - '/design/i'
+  
+  # Accessibility improvements
+  - label: 'accessibility'
+    files:
+      - '**/accessibility*.py'
+      - '**/a11y*.py'
+    title:
+      - '/accessibility/i'
+      - '/a11y/i'
+      - '/screen.?reader/i'
+      - '/keyboard/i'
+  
+  # Build and CI/CD
+  - label: 'build'
+    files:
+      - '.github/**/*'
+      - 'deployment/**/*'
+      - '**/*build*.py'
+      - '**/*.yml'
+      - '**/*.yaml'
+    title:
+      - '/build/i'
+      - '/ci/i'
+      - '/cd/i'
+      - '/deploy/i'
+      - '/workflow/i'
+  
+  # Maintenance and chores
+  - label: 'chore'
+    branch:
+      - '/chore\/.+/'
+      - '/maintenance\/.+/'
+    title:
+      - '/chore/i'
+      - '/maintenance/i'
+      - '/cleanup/i'
+      - '/refactor/i'
+  
+  # Dependencies
+  - label: 'dependencies'
+    files:
+      - 'requirements*.txt'
+      - 'setup.py'
+      - 'pyproject.toml'
+      - 'Pipfile'
+      - 'Pipfile.lock'
+      - 'poetry.lock'
+    title:
+      - '/dependencies/i'
+      - '/deps/i'
+      - '/bump/i'
+      - '/upgrade.*dependency/i'
+  
+  # Testing
+  - label: 'testing'
+    files:
+      - 'tests/**/*'
+      - '**/*test*.py'
+      - '**/test_*.py'
+    title:
+      - '/test/i'
+      - '/testing/i'
+      - '/coverage/i'
+
+# Exclude certain labels from changelog
+exclude-contributors:
+  - 'dependabot'
+  - 'dependabot[bot]'
+  - 'github-actions'
+  - 'github-actions[bot]'
+
+# Sort changelog entries
+sort-by: title
+sort-direction: ascending
