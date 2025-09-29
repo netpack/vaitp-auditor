@@ -421,8 +421,6 @@ def create_ico_file() -> Optional[str]:
         str: Path to the created ICO file or None if creation fails
     """
     try:
-        import platform
-        
         # Find source PNG icon
         base_dir = os.path.dirname(os.path.dirname(__file__))
         png_sources = [
@@ -444,13 +442,8 @@ def create_ico_file() -> Optional[str]:
         # Create ICO file path in the base directory
         ico_path = os.path.join(base_dir, "icon.ico")
         
-        # Check if ICO already exists and is valid
-        if os.path.exists(ico_path) and validate_icon_file(ico_path):
-            png_mtime = os.path.getmtime(source_path)
-            ico_mtime = os.path.getmtime(ico_path)
-            if ico_mtime > png_mtime:
-                logger.debug(f"Valid ICO file already exists: {ico_path}")
-                return ico_path
+        # Always try to create/recreate ICO for better reliability
+        logger.debug(f"Creating ICO file from: {source_path}")
         
         # Try to create ICO using PIL
         try:
@@ -463,29 +456,37 @@ def create_ico_file() -> Optional[str]:
             if icon_image.mode != 'RGBA':
                 icon_image = icon_image.convert('RGBA')
             
-            # Create multiple sizes for ICO file (Windows standard sizes)
-            ico_sizes = [(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]
+            # Create Windows-optimized sizes (focus on commonly used sizes)
+            ico_sizes = [(16, 16), (24, 24), (32, 32), (48, 48), (64, 64)]
             
             # Save as ICO with multiple sizes
             icon_image.save(ico_path, format='ICO', sizes=ico_sizes)
             
             # Validate the created file
-            if validate_icon_file(ico_path):
-                logger.debug(f"Created high-quality ICO file: {ico_path}")
+            if os.path.exists(ico_path) and os.path.getsize(ico_path) > 0:
+                logger.debug(f"Successfully created ICO file: {ico_path} ({os.path.getsize(ico_path)} bytes)")
                 return ico_path
             else:
-                logger.debug("Created ICO file failed validation")
+                logger.debug("ICO file creation failed - file missing or empty")
                 return None
                 
         except ImportError:
             logger.debug("PIL not available for ICO creation")
-            # Return existing ICO if it exists, even if we can't create a new one
-            if os.path.exists(ico_path):
+            # Check if ICO already exists
+            if os.path.exists(ico_path) and os.path.getsize(ico_path) > 0:
+                logger.debug(f"Using existing ICO file: {ico_path}")
+                return ico_path
+            return None
+        except Exception as e:
+            logger.debug(f"PIL ICO creation failed: {e}")
+            # Check if ICO already exists as fallback
+            if os.path.exists(ico_path) and os.path.getsize(ico_path) > 0:
+                logger.debug(f"Using existing ICO file after creation failure: {ico_path}")
                 return ico_path
             return None
         
     except Exception as e:
-        logger.debug(f"Error creating ICO file: {e}")
+        logger.debug(f"Error in ICO file creation: {e}")
         return None
 
 
@@ -579,43 +580,48 @@ def _set_windows_icon(window: Union[tk.Tk, tk.Toplevel], icon_path: str, store_r
     try:
         base_dir = os.path.dirname(os.path.dirname(__file__))
         
-        # Ensure we have a valid ICO file
+        # First, try to use existing ICO file
         ico_path = os.path.join(base_dir, "icon.ico")
-        if not os.path.exists(ico_path) or not validate_icon_file(ico_path):
-            logger.debug("ICO file missing or invalid, attempting to create it")
-            created_ico = create_ico_file()
-            if created_ico:
-                ico_path = created_ico
-                logger.debug(f"Created ICO file: {ico_path}")
-            else:
-                logger.debug("Failed to create ICO file")
         
-        # Method 1: Try ICO format with absolute path (Windows prefers this)
+        # If ICO doesn't exist or is invalid, create it immediately
+        if not os.path.exists(ico_path) or not validate_icon_file(ico_path):
+            logger.debug("Creating ICO file for Windows")
+            # Try to create ICO from PNG
+            png_path = os.path.join(base_dir, "icon.png")
+            if os.path.exists(png_path):
+                try:
+                    # Try PIL first
+                    from PIL import Image
+                    img = Image.open(png_path)
+                    if img.mode != 'RGBA':
+                        img = img.convert('RGBA')
+                    # Create ICO with Windows standard sizes
+                    sizes = [(16, 16), (24, 24), (32, 32), (48, 48), (64, 64)]
+                    img.save(ico_path, format='ICO', sizes=sizes)
+                    logger.debug(f"Created ICO file: {ico_path}")
+                except ImportError:
+                    logger.debug("PIL not available, cannot create ICO")
+                except Exception as e:
+                    logger.debug(f"Failed to create ICO: {e}")
+        
+        # Method 1: Try ICO with multiple approaches
         if os.path.exists(ico_path):
-            try:
-                # Convert to absolute path for Windows
-                abs_ico_path = os.path.abspath(ico_path)
-                window.wm_iconbitmap(abs_ico_path)
-                logger.debug(f"Windows icon set using ICO format: {abs_ico_path}")
-                return True
-            except Exception as e:
-                logger.debug(f"Failed to set ICO icon with absolute path: {e}")
-                
-                # Try with default parameter
+            # Try absolute path first
+            abs_ico_path = os.path.abspath(ico_path)
+            
+            for method_name, method_call in [
+                ("absolute path", lambda: window.wm_iconbitmap(abs_ico_path)),
+                ("default parameter", lambda: window.wm_iconbitmap(default=abs_ico_path)),
+                ("relative path", lambda: window.wm_iconbitmap(ico_path)),
+                ("bitmap parameter", lambda: window.wm_iconbitmap(bitmap=ico_path))
+            ]:
                 try:
-                    window.wm_iconbitmap(default=abs_ico_path)
-                    logger.debug(f"Windows icon set using ICO format (default): {abs_ico_path}")
+                    method_call()
+                    logger.debug(f"Windows icon set using ICO ({method_name}): {ico_path}")
                     return True
-                except Exception as e2:
-                    logger.debug(f"Failed to set ICO icon with default parameter: {e2}")
-                
-                # Try without absolute path
-                try:
-                    window.wm_iconbitmap(ico_path)
-                    logger.debug(f"Windows icon set using ICO format (relative): {ico_path}")
-                    return True
-                except Exception as e3:
-                    logger.debug(f"Failed to set ICO icon with relative path: {e3}")
+                except Exception as e:
+                    logger.debug(f"ICO {method_name} failed: {e}")
+                    continue
         
         # Method 2: Try PNG with PhotoImage as fallback
         png_paths = [

@@ -2568,12 +2568,17 @@ class SetupWizard(ctk.CTkToplevel):
         
         # Set application icon
         from .icon_utils import set_window_icon
+        import platform
         
         success = set_window_icon(self, store_reference=True)
         if success:
             self.logger.debug("Setup wizard icon set successfully")
         else:
             self.logger.debug("Could not set setup wizard icon")
+        
+        # Windows-specific icon setting for Setup Wizard
+        if platform.system() == "Windows":
+            self._set_windows_wizard_icon()
         
         # Make window modal and always on top
         self.transient(self.parent)
@@ -2588,6 +2593,41 @@ class SetupWizard(ctk.CTkToplevel):
         # Ensure window is visible and focused
         self.deiconify()  # Make sure it's not minimized
         self.grab_set()  # Make window modal
+    
+    def _set_windows_wizard_icon(self) -> None:
+        """Set Windows icon specifically for Setup Wizard."""
+        import os
+        import tkinter as tk
+        
+        try:
+            # Get icon paths
+            current_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            base_dir = os.path.join(current_dir, "vaitp_auditor")
+            
+            # Try ICO first (Windows native)
+            ico_path = os.path.join(base_dir, "icon.ico")
+            if os.path.exists(ico_path):
+                try:
+                    abs_ico_path = os.path.abspath(ico_path)
+                    self.wm_iconbitmap(abs_ico_path)
+                    self.logger.debug(f"Setup Wizard Windows ICO icon set: {ico_path}")
+                    return
+                except Exception as e:
+                    self.logger.debug(f"Setup Wizard ICO failed: {e}")
+            
+            # Try PNG fallback
+            png_path = os.path.join(base_dir, "icon.png")
+            if os.path.exists(png_path):
+                try:
+                    icon_photo = tk.PhotoImage(file=png_path)
+                    self.wm_iconphoto(True, icon_photo)
+                    self._wizard_icon_ref = icon_photo  # Prevent GC
+                    self.logger.debug(f"Setup Wizard Windows PNG icon set: {png_path}")
+                except Exception as e:
+                    self.logger.debug(f"Setup Wizard PNG failed: {e}")
+                    
+        except Exception as e:
+            self.logger.debug(f"Setup Wizard Windows icon setting failed: {e}")
         
         # Center on screen since parent might be hidden
         self.update_idletasks()

@@ -53,12 +53,17 @@ class GUIApplication:
         """Set the application icon for the main window and globally."""
         from .icon_utils import set_window_icon, initialize_platform_icons, set_global_application_icon
         import platform
+        import os
         
         # Initialize platform-specific icons first
         try:
             initialize_platform_icons()
         except Exception as e:
             self.logger.debug(f"Could not initialize platform icons: {e}")
+        
+        # Windows needs special handling - do it first and aggressively
+        if platform.system() == "Windows":
+            self._set_windows_icon_aggressively()
         
         # Set the global application icon (affects Dock on macOS)
         try:
@@ -70,65 +75,92 @@ class GUIApplication:
         except Exception as e:
             self.logger.debug(f"Error setting global application icon: {e}")
         
-        # Set the window icon
+        # Set the window icon using standard method
         success = set_window_icon(self.root, store_reference=True)
         if success:
             self.logger.debug("Window icon set successfully")
         else:
             self.logger.debug("Could not set window icon")
-        
-        # Windows-specific aggressive icon setting
-        if platform.system() == "Windows":
-            try:
-                self._force_windows_icon()
-            except Exception as e:
-                self.logger.debug(f"Windows aggressive icon setting failed: {e}")
     
-    def _force_windows_icon(self) -> None:
-        """Force Windows icon setting with multiple methods."""
+    def _set_windows_icon_aggressively(self) -> None:
+        """Aggressively set Windows icon using multiple methods."""
         import os
         import tkinter as tk
         
         try:
-            base_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "vaitp_auditor")
+            # Get the vaitp_auditor directory path
+            current_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            base_dir = os.path.join(current_dir, "vaitp_auditor")
             
-            # Try ICO file first
+            self.logger.debug(f"Setting Windows icon from: {base_dir}")
+            
+            # Method 1: Try ICO file (Windows native format)
             ico_path = os.path.join(base_dir, "icon.ico")
             if os.path.exists(ico_path):
-                try:
-                    # Method 1: Absolute path
-                    abs_ico_path = os.path.abspath(ico_path)
-                    self.root.wm_iconbitmap(abs_ico_path)
-                    self.logger.debug(f"Windows ICO icon forced: {abs_ico_path}")
-                    return
-                except Exception as e:
-                    self.logger.debug(f"Windows ICO absolute path failed: {e}")
+                abs_ico_path = os.path.abspath(ico_path)
                 
-                try:
-                    # Method 2: Default parameter
-                    self.root.wm_iconbitmap(default=ico_path)
-                    self.logger.debug(f"Windows ICO icon forced (default): {ico_path}")
-                    return
-                except Exception as e:
-                    self.logger.debug(f"Windows ICO default failed: {e}")
+                # Try multiple ICO methods
+                ico_methods = [
+                    ("absolute", lambda: self.root.wm_iconbitmap(abs_ico_path)),
+                    ("default", lambda: self.root.wm_iconbitmap(default=abs_ico_path)),
+                    ("relative", lambda: self.root.wm_iconbitmap(ico_path)),
+                ]
+                
+                for method_name, method_func in ico_methods:
+                    try:
+                        method_func()
+                        self.logger.debug(f"Windows ICO icon set ({method_name}): {ico_path}")
+                        return  # Success, exit early
+                    except Exception as e:
+                        self.logger.debug(f"ICO {method_name} method failed: {e}")
+            else:
+                self.logger.debug(f"ICO file not found: {ico_path}")
             
-            # Try PNG fallback
+            # Method 2: Try PNG with PhotoImage
             png_path = os.path.join(base_dir, "icon.png")
             if os.path.exists(png_path):
                 try:
+                    # Create PhotoImage and set icon
                     icon_photo = tk.PhotoImage(file=png_path)
                     self.root.wm_iconphoto(True, icon_photo)
                     # Store reference to prevent garbage collection
-                    self.root._forced_icon = icon_photo
-                    self.logger.debug(f"Windows PNG icon forced: {png_path}")
-                    return
+                    self.root._windows_icon_ref = icon_photo
+                    self.logger.debug(f"Windows PNG icon set: {png_path}")
+                    return  # Success
                 except Exception as e:
-                    self.logger.debug(f"Windows PNG fallback failed: {e}")
+                    self.logger.debug(f"PNG PhotoImage method failed: {e}")
+            else:
+                self.logger.debug(f"PNG file not found: {png_path}")
             
-            self.logger.debug("All Windows icon forcing methods failed")
+            # Method 3: Try creating ICO from PNG if PIL is available
+            if os.path.exists(png_path) and not os.path.exists(ico_path):
+                try:
+                    from PIL import Image
+                    self.logger.debug("Creating ICO file from PNG for Windows")
+                    
+                    img = Image.open(png_path)
+                    if img.mode != 'RGBA':
+                        img = img.convert('RGBA')
+                    
+                    # Create ICO with standard Windows sizes
+                    sizes = [(16, 16), (24, 24), (32, 32), (48, 48)]
+                    img.save(ico_path, format='ICO', sizes=sizes)
+                    
+                    # Now try to use the created ICO
+                    abs_ico_path = os.path.abspath(ico_path)
+                    self.root.wm_iconbitmap(abs_ico_path)
+                    self.logger.debug(f"Created and set ICO icon: {ico_path}")
+                    return  # Success
+                    
+                except ImportError:
+                    self.logger.debug("PIL not available for ICO creation")
+                except Exception as e:
+                    self.logger.debug(f"ICO creation and setting failed: {e}")
+            
+            self.logger.warning("All Windows icon methods failed")
             
         except Exception as e:
-            self.logger.debug(f"Error in Windows icon forcing: {e}")
+            self.logger.error(f"Critical error in Windows icon setting: {e}")
     
     def run(self) -> None:
         """
