@@ -81,6 +81,7 @@ vaitp-auditor
 # Select option 1: Folders
 # Generated code: /path/to/generated/
 # Expected code: /path/to/expected/
+# Original input code: /path/to/input/
 ```
 
 **🗄️ Database Review**
@@ -115,29 +116,6 @@ vaitp-auditor
 - `u` - **Undo** ↩️ (Go back one step)
 - `q` - **Quit** 🚪 (Save and exit)
 
-**GUI Mode Features**
-
-- Point-and-click interface with keyboard shortcuts
-- Side-by-side code comparison with syntax highlighting
-- Progress tracking and session management
-- Accessibility features and customizable themes
-
-### 📊 Example Session
-
-```
-┌─ Expected Code ─────────────────┐ ┌─ Generated Code ────────────────┐
-│ def vulnerable_function():      │ │ def vulnerable_function():      │
-│     user_input = input()        │ │     user_input = input()        │
-│     eval(user_input)  # BAD!    │ │     # Fixed: validate input     │
-│                                 │ │     if user_input.isalnum():    │
-│                                 │ │         eval(user_input)        │
-└─────────────────────────────────┘ └─────────────────────────────────┘
-
-Review 1/100 (1.0%) - ID: test_001.py
-Classification: [s]uccess [f]ailure [i]nvalid [w]rong [p]artial [u]ndo [q]uit
-```
-
----
 
 ## ✨ Key Features
 
@@ -192,25 +170,6 @@ Classification: [s]uccess [f]ailure [i]nvalid [w]rong [p]artial [u]ndo [q]uit
 
 ---
 
-## 🧪 Testing & Validation
-
-```bash
-# Run the full test suite
-pytest
-
-# Performance benchmarks
-pytest tests/test_performance.py -v
-
-# Cross-platform compatibility
-pytest tests/test_cross_platform.py -v
-
-# Comprehensive validation
-pytest tests/test_comprehensive_validation.py -v
-```
-
-**Test Coverage**: Comprehensive test suite covering all components with performance benchmarks and cross-platform validation.
-
----
 
 ## 🧹 Maintenance & Cleanup
 
@@ -229,14 +188,6 @@ find ~/.vaitp_auditor/sessions/ -name "*.pkl" -mtime +7 -delete
 rm ~/.vaitp_auditor/sessions/*.pkl
 ```
 
-### Complete Reset
-
-```bash
-# Remove all application data (sessions, logs, config)
-rm -rf ~/.vaitp_auditor/
-
-# Reports are stored separately in ./reports/ and won't be affected
-```
 
 ### File Locations
 
@@ -290,18 +241,6 @@ rm -rf ~/.vaitp_auditor/
 
 ---
 
-## 🎯 Performance Targets
-
-| Metric             | Target              | Achieved      |
-| ------------------ | ------------------- | ------------- |
-| **Code Display**   | < 100ms             | ✅ ~50ms      |
-| **Syntax Highlighting** | < 50ms        | ✅ ~20ms      |
-| **Diff Computation** | < 100ms           | ✅ ~50ms      |
-| **Memory Usage**   | < 1GB for 10K pairs | ✅ ~500MB     |
-| **Session Start**  | < 5 seconds         | ✅ ~2 seconds |
-| **Navigation Speed** | < 500ms for 50 items | ✅ ~200ms   |
-
----
 
 ## 🤝 Contributing
 
@@ -328,18 +267,6 @@ We welcome contributions! Here's how to get started:
 - Write clear, descriptive commit messages
 
 ### Code Quality
-
-```bash
-# Run tests
-pytest
-
-# Check code style
-black --check .
-flake8 .
-
-# Type checking
-mypy vaitp_auditor/
-```
 
 See our [Developer Guide](docs/DEVELOPER_GUIDE.md) for detailed contribution guidelines and architecture information.
 
@@ -397,5 +324,7 @@ VAITP-Auditor is currently in **active development** (v0.1.0 Alpha). The core fu
 - 🐛 **Issues**: Report bugs and request features via GitHub Issues
 - 💬 **Discussions**: Join community discussions for questions and ideas
 - 📧 **Contact**: Reach out to the VAITP Research Team for collaboration
+
+- Support my work on Patreon: https://www.patreon.com/user?u=62912574
 
 ---
