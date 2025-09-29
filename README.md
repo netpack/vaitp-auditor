@@ -38,6 +38,12 @@ pip install -e ".[gui]"
 vaitp-auditor
 ```
 
+### Screenshot
+
+![vaitp-auditor](.screenshot.png)
+
+
+
 ### 🎯 First Run
 
 **GUI Mode (Default)**
