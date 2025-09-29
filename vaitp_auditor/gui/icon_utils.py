@@ -93,13 +93,48 @@ def set_global_application_icon(root_window) -> bool:
                 return False
         
         elif system == "Windows":
-            # Windows: Try to set application icon
+            # Windows: Try to set application icon with multiple methods
             try:
-                ico_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "icon.ico")
+                base_dir = os.path.dirname(os.path.dirname(__file__))
+                ico_path = os.path.join(base_dir, "icon.ico")
+                
+                # Ensure ICO file exists
+                if not os.path.exists(ico_path) or not validate_icon_file(ico_path):
+                    created_ico = create_ico_file()
+                    if created_ico:
+                        ico_path = created_ico
+                
                 if os.path.exists(ico_path):
-                    root_window.iconbitmap(ico_path)
-                    logger.debug("Set global Windows application icon")
-                    return True
+                    # Method 1: Set with absolute path
+                    try:
+                        abs_ico_path = os.path.abspath(ico_path)
+                        root_window.iconbitmap(abs_ico_path)
+                        logger.debug(f"Set global Windows application icon: {abs_ico_path}")
+                        return True
+                    except Exception as e:
+                        logger.debug(f"Absolute path method failed: {e}")
+                    
+                    # Method 2: Set with default parameter
+                    try:
+                        root_window.iconbitmap(default=ico_path)
+                        logger.debug(f"Set global Windows application icon (default): {ico_path}")
+                        return True
+                    except Exception as e:
+                        logger.debug(f"Default parameter method failed: {e}")
+                
+                # Method 3: Try PNG fallback
+                png_path = os.path.join(base_dir, "icon.png")
+                if os.path.exists(png_path):
+                    try:
+                        import tkinter as tk
+                        icon_photo = tk.PhotoImage(file=png_path)
+                        root_window.wm_iconphoto(True, icon_photo)
+                        root_window._global_app_icon_png = icon_photo
+                        logger.debug("Set global Windows application icon using PNG")
+                        return True
+                    except Exception as e:
+                        logger.debug(f"PNG fallback method failed: {e}")
+                
             except Exception as e:
                 logger.debug(f"Error setting Windows global icon: {e}")
                 return False
@@ -540,15 +575,26 @@ def set_window_icon(window: Union[tk.Tk, tk.Toplevel], store_reference: bool = T
 
 
 def _set_windows_icon(window: Union[tk.Tk, tk.Toplevel], icon_path: str, store_reference: bool) -> bool:
-    """Set icon on Windows with ICO format preference."""
+    """Set icon on Windows with enhanced ICO format handling."""
     try:
         base_dir = os.path.dirname(os.path.dirname(__file__))
         
+        # Ensure we have a valid ICO file
+        ico_path = os.path.join(base_dir, "icon.ico")
+        if not os.path.exists(ico_path) or not validate_icon_file(ico_path):
+            logger.debug("ICO file missing or invalid, attempting to create it")
+            created_ico = create_ico_file()
+            if created_ico:
+                ico_path = created_ico
+                logger.debug(f"Created ICO file: {ico_path}")
+            else:
+                logger.debug("Failed to create ICO file")
+        
         # Method 1: Try ICO format with absolute path (Windows prefers this)
-        if icon_path.endswith('.ico'):
+        if os.path.exists(ico_path):
             try:
                 # Convert to absolute path for Windows
-                abs_ico_path = os.path.abspath(icon_path)
+                abs_ico_path = os.path.abspath(ico_path)
                 window.wm_iconbitmap(abs_ico_path)
                 logger.debug(f"Windows icon set using ICO format: {abs_ico_path}")
                 return True
@@ -557,32 +603,28 @@ def _set_windows_icon(window: Union[tk.Tk, tk.Toplevel], icon_path: str, store_r
                 
                 # Try with default parameter
                 try:
-                    window.wm_iconbitmap(default=icon_path)
-                    logger.debug(f"Windows icon set using ICO format (default): {icon_path}")
+                    window.wm_iconbitmap(default=abs_ico_path)
+                    logger.debug(f"Windows icon set using ICO format (default): {abs_ico_path}")
                     return True
                 except Exception as e2:
                     logger.debug(f"Failed to set ICO icon with default parameter: {e2}")
+                
+                # Try without absolute path
+                try:
+                    window.wm_iconbitmap(ico_path)
+                    logger.debug(f"Windows icon set using ICO format (relative): {ico_path}")
+                    return True
+                except Exception as e3:
+                    logger.debug(f"Failed to set ICO icon with relative path: {e3}")
         
-        # Method 2: Try to find and use ICO file if not already using one
-        ico_path = os.path.join(base_dir, "icon.ico")
-        if os.path.exists(ico_path) and not icon_path.endswith('.ico'):
-            try:
-                abs_ico_path = os.path.abspath(ico_path)
-                window.wm_iconbitmap(abs_ico_path)
-                logger.debug(f"Windows icon set using found ICO: {abs_ico_path}")
-                return True
-            except Exception as e:
-                logger.debug(f"Failed to set found ICO icon: {e}")
-        
-        # Method 3: Try PNG with PhotoImage
+        # Method 2: Try PNG with PhotoImage as fallback
         png_paths = [
             os.path.join(base_dir, "icon.png"),
-            icon_path if icon_path.endswith('.png') else None,
             os.path.join(base_dir, "gui", "assets", "icons", "app_icon.png")
         ]
         
         for png_path in png_paths:
-            if png_path and os.path.exists(png_path):
+            if os.path.exists(png_path) and validate_icon_file(png_path):
                 try:
                     result = _set_photoimage_icon(window, png_path, store_reference)
                     if result:
@@ -591,6 +633,27 @@ def _set_windows_icon(window: Union[tk.Tk, tk.Toplevel], icon_path: str, store_r
                 except Exception as e:
                     logger.debug(f"Failed to set PNG icon {png_path}: {e}")
                     continue
+        
+        # Method 3: Try PIL method if available
+        try:
+            from PIL import Image, ImageTk
+            png_path = os.path.join(base_dir, "icon.png")
+            if os.path.exists(png_path):
+                img = Image.open(png_path)
+                # Create a smaller icon for better Windows compatibility
+                img = img.resize((32, 32), Image.Resampling.LANCZOS)
+                icon_pil = ImageTk.PhotoImage(img)
+                window.wm_iconphoto(True, icon_pil)
+                
+                if store_reference:
+                    window._vaitp_icon_pil = icon_pil
+                
+                logger.debug("Windows icon set using PIL method")
+                return True
+        except ImportError:
+            logger.debug("PIL not available for Windows icon")
+        except Exception as e:
+            logger.debug(f"PIL method failed: {e}")
         
         logger.debug("All Windows icon methods failed")
         return False
