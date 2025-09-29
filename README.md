@@ -40,7 +40,7 @@ vaitp-auditor
 
 ### Screenshot
 
-![vaitp-auditor](.screenshot.png)
+![vaitp-auditor gui screenshot](screenshot.png)
 
 
 
