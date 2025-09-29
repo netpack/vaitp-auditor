@@ -32,7 +32,7 @@ python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Install with GUI support
-pip install -e .[gui]
+pip install -e ".[gui]"
 
 # Run the application
 vaitp-auditor
