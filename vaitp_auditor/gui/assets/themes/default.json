@@ -1,0 +1,20 @@
+{
+  "name": "default",
+  "appearance_mode": "system",
+  "colors": {
+    "primary": "#1f538d",
+    "secondary": "#14375e",
+    "success": "#198754",
+    "warning": "#ffc107",
+    "error": "#dc3545",
+    "background": "#ffffff",
+    "surface": "#f8f9fa",
+    "text": "#212529"
+  },
+  "fonts": {
+    "default_family": "SF Pro Display",
+    "code_family": "SF Mono",
+    "default_size": 12,
+    "code_size": 11
+  }
+}

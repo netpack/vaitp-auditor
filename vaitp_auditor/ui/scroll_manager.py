@@ -3,11 +3,18 @@ Scroll manager for handling vertical and horizontal scrolling in terminal UI.
 """
 
 import sys
-import termios
-import tty
 from typing import Tuple, Optional, List
 from dataclasses import dataclass
 from enum import Enum
+
+# Platform-specific imports - not needed for scroll manager functionality
+# but kept for compatibility
+try:
+    import termios
+    import tty
+    UNIX_PLATFORM = True
+except ImportError:
+    UNIX_PLATFORM = False
 
 
 class ScrollDirection(Enum):

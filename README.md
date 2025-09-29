@@ -13,42 +13,29 @@ Transform your code review workflow with both modern GUI and interactive termina
 ---
 
 
-## 🚀 Quick Installation
-
-### Option 1: Download Pre-built Executable (Recommended)
-
-1. Go to [Releases](https://github.com/netpack/vaitp-auditor/releases)
-2. Download the appropriate file for your system:
-   - **Windows**: `VAITP-Auditor-GUI-Windows-x64-v*.zip`
-   - **macOS**: `VAITP-Auditor-GUI-macOS-v*.dmg`
-   - **Linux**: `VAITP-Auditor-GUI-Linux-x86_64-v*.AppImage`
-3. Extract (if needed) and run - no Python installation required!
-
-### Option 2: Install from Source
-
-## 🚀 Quick Setup (Development)
+## 🚀 Installation
 
 ### Prerequisites
 
 - **Python 3.8+** 🐍 (Python 3.10+ recommended)
-- **Terminal with color support** 🎨
-- **4GB RAM** (8GB recommended) 💾
+- **Git** for cloning the repository
 
-### Installation
+### Quick Setup
 
 ```bash
 # Clone the repository
 git clone https://github.com/netpack/vaitp-auditor.git
 cd vaitp-auditor
 
-# Install with GUI support (recommended)
+# Create and activate a Python virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install with GUI support
 pip install -e .[gui]
 
-# Or install CLI only
-pip install -e .
-
-# Verify installation
-vaitp-auditor --help
+# Run the application
+vaitp-auditor
 ```
 
 ### 🎯 First Run
@@ -191,23 +178,11 @@ Classification: [s]uccess [f]ailure [i]nvalid [w]rong [p]artial [u]ndo [q]uit
 
 ## 📋 System Requirements
 
-| Component   | Minimum                                | Recommended   |
-| ----------- | -------------------------------------- | ------------- |
-| **Python**  | 3.8                                    | 3.10+         |
-| **RAM**     | 4GB                                    | 8GB+          |
-| **Storage** | 1GB                                    | 5GB+          |
-| **OS**      | Windows 10, macOS 10.14, Ubuntu 18.04+ | Latest stable |
-
-### Optional Enhancements
-
-```bash
-# Install all optional dependencies
-pip install -e .[all]
-
-# Or install specific extras
-pip install -e .[gui]  # GUI dependencies
-pip install -e .[dev]  # Development tools
-```
+| Component   | Minimum     | Recommended |
+| ----------- | ----------- | ----------- |
+| **Python**  | 3.8         | 3.10+       |
+| **RAM**     | 4GB         | 8GB+        |
+| **Storage** | 1GB         | 5GB+        |
 
 ---
 
@@ -401,12 +376,9 @@ VAITP-Auditor is currently in **active development** (v0.1.0 Alpha). The core fu
 - ✅ Modern GUI interface with accessibility features
 - ✅ Enhanced performance optimization and caching
 - ✅ Comprehensive test suite with >80% coverage
-- ✅ Cross-platform compatibility testing
-- 🔄 Multi-platform deployment system (in progress)
-- 🔄 Automated release pipeline (in progress)
+- ✅ Simplified installation process
 
 ### Upcoming Features
-- 📦 Standalone executable distributions
 - 🔄 Enhanced reporting and analytics
 - 🎨 Additional GUI themes and customization
 - 📊 Advanced performance metrics and monitoring

@@ -32,7 +32,7 @@ The VAITP-Auditor is a Python-based Manual Code Verification Assistant designed 
 3. Install the package:
 
 ```bash
-pip install -e .
+pip install -e .[gui]
 ```
 
 ### Verify Installation

@@ -6,9 +6,37 @@ from setuptools import setup, find_packages
 import os
 import sys
 
-# Add the package directory to the path to import version
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'vaitp_auditor'))
-from _version import __version__
+# Robust cross-platform version import for Windows compatibility
+def get_version():
+    """Get version using robust cross-platform method."""
+    import importlib.util
+    from pathlib import Path
+    
+    # Get the version file path
+    setup_dir = Path(__file__).parent.absolute()
+    version_file = setup_dir / "vaitp_auditor" / "_version.py"
+    
+    if not version_file.exists():
+        # Fallback version if file doesn't exist
+        return "0.1.0"
+    
+    try:
+        # Load the version module directly using importlib
+        spec = importlib.util.spec_from_file_location("_version", version_file)
+        if spec is None or spec.loader is None:
+            return "0.1.0"
+        
+        version_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(version_module)
+        
+        # Get version from the module
+        return getattr(version_module, '__version__', "0.1.0")
+        
+    except Exception:
+        # Fallback to hardcoded version if all else fails
+        return "0.1.0"
+
+__version__ = get_version()
 
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()

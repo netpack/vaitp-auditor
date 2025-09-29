@@ -14,7 +14,7 @@
    ```bash
    git clone <repository-url>
    cd vaitp-auditor
-   pip install -e .
+   pip install -e .[gui]
    ```
 
 2. **Verify installation**:
@@ -54,7 +54,7 @@
 python --version  # Should be 3.8+
 
 # Install directly
-pip install -e .
+pip install -e .[gui]
 ```
 
 #### Option 2: Virtual Environment (Recommended)
@@ -70,7 +70,7 @@ vaitp-auditor-env\Scripts\activate
 source vaitp-auditor-env/bin/activate
 
 # Install package
-pip install -e .
+pip install -e .[gui]
 ```
 
 #### Option 3: Conda Environment
@@ -81,7 +81,7 @@ conda create -n vaitp-auditor python=3.10
 conda activate vaitp-auditor
 
 # Install package
-pip install -e .
+pip install -e .[gui]
 ```
 
 ### Development Setup
@@ -242,12 +242,12 @@ pytest tests/test_cross_platform.py -v
 **Problem**: `pip install` fails with permission errors
 ```bash
 # Solution 1: Use user installation
-pip install --user -e .
+pip install --user -e .[gui]
 
 # Solution 2: Use virtual environment (recommended)
 python -m venv venv
 source venv/bin/activate
-pip install -e .
+pip install -e .[gui]
 ```
 
 **Problem**: Python version too old
@@ -298,7 +298,7 @@ pip list | grep vaitp
 
 # Reinstall if needed
 pip uninstall vaitp-auditor
-pip install -e .
+pip install -e .[gui]
 ```
 
 **Problem**: Permission denied for session directory
@@ -372,7 +372,7 @@ RUN apt-get update && apt-get install -y \
 COPY . .
 
 # Install application
-RUN pip install -e .
+RUN pip install -e .[gui]
 
 # Create data directories
 RUN mkdir -p /data/input /data/output
@@ -428,7 +428,7 @@ git clone <repository-url>
 cd vaitp-auditor
 python3.10 -m venv venv
 source venv/bin/activate
-pip install -e .
+pip install -e .[gui]
 
 # Transfer data files (use scp, rsync, or S3)
 # Run reviews in screen/tmux for long sessions
@@ -472,7 +472,7 @@ If you encounter issues:
 ```bash
 # Update from repository
 git pull origin main
-pip install -e .
+pip install -e .[gui]
 
 # Update dependencies
 pip install --upgrade -r requirements.txt
