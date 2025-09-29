@@ -65,9 +65,8 @@ except Exception as e:
         
         required_files=(
           "setup.py"
-          "deployment/build_executable.py"
-          "deployment/pyinstaller_config.spec"
           "vaitp_auditor/gui/gui_app.py"
+          "vaitp_auditor/core/models.py"
         )
         
         for file in "${required_files[@]}"; do
@@ -79,21 +78,12 @@ except Exception as e:
           fi
         done
         
-    - name: Validate Python syntax of build scripts
+    - name: Validate Python syntax of core files
       run: |
-        echo "Validating Python build scripts..."
+        echo "Validating Python core files..."
         
-        python3 -m py_compile deployment/build_executable.py
-        echo "✅ build_executable.py syntax is valid"
+        python3 -m py_compile vaitp_auditor/gui/gui_app.py
+        echo "✅ gui_app.py syntax is valid"
         
-        python3 -c "
-import ast
-with open('deployment/pyinstaller_config.spec', 'r') as f:
-    content = f.read()
-    try:
-        ast.parse(content)
-        print('✅ pyinstaller_config.spec syntax is valid')
-    except SyntaxError as e:
-        print(f'❌ Syntax error in spec file: {e}')
-        exit(1)
-"
+        python3 -m py_compile vaitp_auditor/core/models.py
+        echo "✅ models.py syntax is valid"
