@@ -152,6 +152,13 @@ class GUIErrorHandler:
         dialog.geometry("400x200")
         dialog.resizable(False, False)
         
+        # Set application icon
+        try:
+            from .icon_utils import set_window_icon
+            set_window_icon(dialog, store_reference=True)
+        except Exception:
+            pass  # Silently fail for dialog icons
+        
         # Center the dialog on parent
         dialog.transient(parent)
         dialog.grab_set()

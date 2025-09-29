@@ -50,14 +50,31 @@ class GUIApplication:
         atexit.register(self.handle_application_exit)
     
     def _set_application_icon(self) -> None:
-        """Set the application icon for the main window."""
-        from .icon_utils import set_window_icon
+        """Set the application icon for the main window and globally."""
+        from .icon_utils import set_window_icon, initialize_platform_icons, set_global_application_icon
         
+        # Initialize platform-specific icons first
+        try:
+            initialize_platform_icons()
+        except Exception as e:
+            self.logger.debug(f"Could not initialize platform icons: {e}")
+        
+        # Set the global application icon (affects Dock on macOS)
+        try:
+            global_success = set_global_application_icon(self.root)
+            if global_success:
+                self.logger.debug("Global application icon set successfully")
+            else:
+                self.logger.debug("Could not set global application icon")
+        except Exception as e:
+            self.logger.debug(f"Error setting global application icon: {e}")
+        
+        # Set the window icon
         success = set_window_icon(self.root, store_reference=True)
         if success:
-            self.logger.debug("Application icon set successfully")
+            self.logger.debug("Window icon set successfully")
         else:
-            self.logger.debug("Could not set application icon")
+            self.logger.debug("Could not set window icon")
     
     def run(self) -> None:
         """

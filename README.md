@@ -12,7 +12,6 @@ Transform your code review workflow with both modern GUI and interactive termina
 
 ---
 
-
 ## 🚀 Installation
 
 ### Prerequisites
@@ -42,11 +41,10 @@ vaitp-auditor
 
 ![vaitp-auditor gui screenshot](screenshot.png)
 
-
-
 ### 🎯 First Run
 
 **GUI Mode (Default)**
+
 ```bash
 # Launch the modern desktop interface (default if GUI dependencies available)
 vaitp-auditor
@@ -55,6 +53,7 @@ vaitp-auditor --gui
 ```
 
 **Terminal Mode**
+
 ```bash
 # Start terminal-based review session
 vaitp-auditor --cli
@@ -116,7 +115,6 @@ vaitp-auditor
 - `u` - **Undo** ↩️ (Go back one step)
 - `q` - **Quit** 🚪 (Save and exit)
 
-
 ## ✨ Key Features
 
 ### 🖥️ **Modern Desktop GUI**
@@ -162,14 +160,13 @@ vaitp-auditor
 
 ## 📋 System Requirements
 
-| Component   | Minimum     | Recommended |
-| ----------- | ----------- | ----------- |
-| **Python**  | 3.8         | 3.10+       |
-| **RAM**     | 4GB         | 8GB+        |
-| **Storage** | 1GB         | 5GB+        |
+| Component   | Minimum | Recommended |
+| ----------- | ------- | ----------- |
+| **Python**  | 3.8     | 3.10+       |
+| **RAM**     | 4GB     | 8GB+        |
+| **Storage** | 1GB     | 5GB+        |
 
 ---
-
 
 ## 🧹 Maintenance & Cleanup
 
@@ -187,7 +184,6 @@ find ~/.vaitp_auditor/sessions/ -name "*.pkl" -mtime +7 -delete
 # Remove all session files (⚠️ careful!)
 rm ~/.vaitp_auditor/sessions/*.pkl
 ```
-
 
 ### File Locations
 
@@ -208,13 +204,13 @@ rm ~/.vaitp_auditor/sessions/*.pkl
 
 ## 📚 Documentation
 
-| Guide                                              | Description                                |
-| -------------------------------------------------- | ------------------------------------------ |
-| 🖥️ [GUI User Guide](docs/GUI_USER_GUIDE.md)        | Complete GUI interface documentation       |
-| 👩‍💻 [GUI Developer Guide](docs/GUI_DEVELOPER_GUIDE.md) | GUI development and extension guide        |
-| 📖 [CLI User Guide](docs/USER_GUIDE.md)           | Terminal interface documentation           |
-| 🔧 [Setup Guide](docs/SETUP_GUIDE.md)             | Detailed installation and configuration    |
-| 🏗️ [Developer Guide](docs/DEVELOPER_GUIDE.md)      | Architecture and contribution guidelines   |
+| Guide                                                 | Description                              |
+| ----------------------------------------------------- | ---------------------------------------- |
+| 🖥️ [GUI User Guide](docs/GUI_USER_GUIDE.md)           | Complete GUI interface documentation     |
+| 👩‍💻 [GUI Developer Guide](docs/GUI_DEVELOPER_GUIDE.md) | GUI development and extension guide      |
+| 📖 [CLI User Guide](docs/USER_GUIDE.md)               | Terminal interface documentation         |
+| 🔧 [Setup Guide](docs/SETUP_GUIDE.md)                 | Detailed installation and configuration  |
+| 🏗️ [Developer Guide](docs/DEVELOPER_GUIDE.md)         | Architecture and contribution guidelines |
 
 ---
 
@@ -240,7 +236,6 @@ rm ~/.vaitp_auditor/sessions/*.pkl
 ```
 
 ---
-
 
 ## 🤝 Contributing
 
@@ -306,12 +301,14 @@ The MIT License is a permissive license that allows you to use this software for
 VAITP-Auditor is currently in **active development** (v0.1.0 Alpha). The core functionality is stable and ready for use, with ongoing improvements to the GUI interface, performance optimizations, and deployment capabilities.
 
 ### Recent Updates
+
 - ✅ Modern GUI interface with accessibility features
 - ✅ Enhanced performance optimization and caching
 - ✅ Comprehensive test suite with >80% coverage
 - ✅ Simplified installation process
 
 ### Upcoming Features
+
 - 🔄 Enhanced reporting and analytics
 - 🎨 Additional GUI themes and customization
 - 📊 Advanced performance metrics and monitoring

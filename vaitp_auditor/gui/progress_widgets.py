@@ -178,6 +178,13 @@ class ProgressDialog(ctk.CTkToplevel):
         self.geometry("400x250")
         self.resizable(False, False)
         
+        # Set application icon
+        try:
+            from .icon_utils import set_window_icon
+            set_window_icon(self, store_reference=True)
+        except Exception:
+            pass  # Silently fail for dialog icons
+        
         # Make dialog modal
         self.transient(parent)
         self.grab_set()

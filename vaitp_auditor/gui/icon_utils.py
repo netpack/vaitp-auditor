@@ -19,7 +19,158 @@ def get_icon_path() -> str:
     Returns:
         str: Path to the icon.png file
     """
-    return os.path.join(os.path.dirname(os.path.dirname(__file__)), "icon.png")
+    import platform
+    
+    # Get the base directory (vaitp_auditor)
+    base_dir = os.path.dirname(os.path.dirname(__file__))
+    
+    # Try platform-specific icon formats first
+    system = platform.system()
+    if system == "Windows":
+        # Try ICO format first on Windows
+        ico_path = os.path.join(base_dir, "icon.ico")
+        if os.path.exists(ico_path):
+            return ico_path
+    elif system == "Darwin":
+        # Try ICNS format first on macOS
+        icns_path = os.path.join(base_dir, "icon.icns")
+        if os.path.exists(icns_path):
+            return icns_path
+    
+    # Fallback to PNG
+    png_path = os.path.join(base_dir, "icon.png")
+    if os.path.exists(png_path):
+        return png_path
+    
+    # Try GUI assets directory as fallback
+    gui_icon_path = os.path.join(base_dir, "gui", "assets", "icons", "app_icon.png")
+    if os.path.exists(gui_icon_path):
+        return gui_icon_path
+    
+    # Final fallback - return PNG path even if it doesn't exist
+    return png_path
+
+
+def set_global_application_icon(root_window) -> bool:
+    """Set the global application icon (affects Dock on macOS).
+    
+    Args:
+        root_window: The main Tk root window
+        
+    Returns:
+        bool: True if global icon was set successfully
+    """
+    import platform
+    import tkinter as tk
+    
+    try:
+        system = platform.system()
+        
+        if system == "Darwin":
+            # macOS: Set application name and global icon
+            try:
+                # Set application name
+                root_window.tk.call('tk', 'appname', 'VAITP-Auditor')
+                logger.debug("Set application name to VAITP-Auditor")
+                
+                # Use PNG for global icon (better compatibility)
+                base_dir = os.path.dirname(os.path.dirname(__file__))
+                png_path = os.path.join(base_dir, "icon.png")
+                
+                if os.path.exists(png_path):
+                    icon_photo = tk.PhotoImage(file=png_path)
+                    root_window.tk.call('wm', 'iconphoto', root_window._w, '-default', icon_photo)
+                    # Store reference to prevent garbage collection
+                    root_window._global_app_icon = icon_photo
+                    logger.debug("Set global application icon for macOS Dock")
+                    return True
+                else:
+                    logger.debug("PNG file not found for global icon")
+                    return False
+                    
+            except Exception as e:
+                logger.debug(f"Error setting macOS global icon: {e}")
+                return False
+        
+        elif system == "Windows":
+            # Windows: Try to set application icon
+            try:
+                ico_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "icon.ico")
+                if os.path.exists(ico_path):
+                    root_window.iconbitmap(ico_path)
+                    logger.debug("Set global Windows application icon")
+                    return True
+            except Exception as e:
+                logger.debug(f"Error setting Windows global icon: {e}")
+                return False
+        
+        # For other platforms, just return True (no global icon needed)
+        return True
+        
+    except Exception as e:
+        logger.debug(f"Error setting global application icon: {e}")
+        return False
+
+
+def initialize_platform_icons() -> bool:
+    """Initialize platform-specific icon files if they don't exist.
+    
+    Returns:
+        bool: True if icons were initialized successfully
+    """
+    import platform
+    
+    try:
+        system = platform.system()
+        
+        if system == "Windows":
+            # Ensure ICO file exists for Windows
+            base_dir = os.path.dirname(os.path.dirname(__file__))
+            ico_path = os.path.join(base_dir, "icon.ico")
+            
+            if os.path.exists(ico_path):
+                logger.debug(f"Windows ICO icon already exists: {ico_path}")
+                return True
+            else:
+                # Try to create ICO file
+                created_ico = create_ico_file()
+                if created_ico:
+                    logger.debug("Windows ICO icon created")
+                    return True
+                else:
+                    # Fallback: ensure PNG exists
+                    png_path = os.path.join(base_dir, "icon.png")
+                    if os.path.exists(png_path):
+                        logger.debug("Windows: Using PNG fallback")
+                        return True
+                    
+        elif system == "Darwin":
+            # Ensure ICNS file exists for macOS
+            base_dir = os.path.dirname(os.path.dirname(__file__))
+            icns_path = os.path.join(base_dir, "icon.icns")
+            
+            if os.path.exists(icns_path):
+                logger.debug(f"macOS ICNS icon already exists: {icns_path}")
+                return True
+            else:
+                # Try to create ICNS file
+                created_icns = create_icns_file()
+                if created_icns:
+                    logger.debug("macOS ICNS icon created")
+                    return True
+        
+        # For Linux or if platform-specific creation failed, ensure PNG exists
+        icon_path = get_icon_path()
+        if os.path.exists(icon_path):
+            logger.debug(f"Using existing icon: {icon_path}")
+            return True
+        
+        logger.debug("No suitable icon found or created")
+        return False
+        
+    except Exception as e:
+        logger.debug(f"Error initializing platform icons: {e}")
+        return False
 
 
 def load_application_icons() -> Optional[List]:
@@ -29,6 +180,9 @@ def load_application_icons() -> Optional[List]:
         List of PhotoImage objects or None if loading fails
     """
     try:
+        # Initialize platform-specific icons if needed
+        initialize_platform_icons()
+        
         from PIL import Image, ImageTk
         
         icon_path = get_icon_path()
@@ -190,6 +344,41 @@ def create_icns_file() -> Optional[str]:
         return None
 
 
+def validate_icon_file(icon_path: str) -> bool:
+    """Validate that an icon file is readable and not corrupted.
+    
+    Args:
+        icon_path: Path to the icon file
+        
+    Returns:
+        bool: True if icon is valid, False otherwise
+    """
+    try:
+        if not os.path.exists(icon_path):
+            return False
+        
+        # Check file size (should be > 0)
+        if os.path.getsize(icon_path) == 0:
+            return False
+        
+        # Try to open with PIL if available
+        try:
+            from PIL import Image
+            img = Image.open(icon_path)
+            # Try to access basic properties
+            _ = img.size
+            _ = img.mode
+            return True
+        except ImportError:
+            # PIL not available, just check if file exists and has size
+            return True
+        except Exception:
+            return False
+            
+    except Exception:
+        return False
+
+
 def create_ico_file() -> Optional[str]:
     """Create a high-quality ICO file from the PNG icon for better Windows compatibility.
     
@@ -197,48 +386,68 @@ def create_ico_file() -> Optional[str]:
         str: Path to the created ICO file or None if creation fails
     """
     try:
-        from PIL import Image
+        import platform
         
-        icon_path = get_icon_path()
-        if not os.path.exists(icon_path):
+        # Find source PNG icon
+        base_dir = os.path.dirname(os.path.dirname(__file__))
+        png_sources = [
+            os.path.join(base_dir, "icon.png"),
+            os.path.join(base_dir, "gui", "assets", "icons", "app_icon.png"),
+            os.path.join(base_dir, "icon_master.png")
+        ]
+        
+        source_path = None
+        for path in png_sources:
+            if os.path.exists(path) and validate_icon_file(path):
+                source_path = path
+                break
+        
+        if not source_path:
+            logger.debug("No valid PNG source found for ICO creation")
             return None
         
-        # Create ICO file path
-        ico_path = icon_path.replace('.png', '.ico')
+        # Create ICO file path in the base directory
+        ico_path = os.path.join(base_dir, "icon.ico")
         
-        # Check if ICO already exists and is newer than PNG
-        if os.path.exists(ico_path):
-            png_mtime = os.path.getmtime(icon_path)
+        # Check if ICO already exists and is valid
+        if os.path.exists(ico_path) and validate_icon_file(ico_path):
+            png_mtime = os.path.getmtime(source_path)
             ico_mtime = os.path.getmtime(ico_path)
             if ico_mtime > png_mtime:
+                logger.debug(f"Valid ICO file already exists: {ico_path}")
                 return ico_path
         
-        # Try to use the optimized master icon if available
-        master_path = icon_path.replace('.png', '_master.png')
-        if os.path.exists(master_path):
-            icon_image = Image.open(master_path)
-        else:
-            # Load the original image
-            icon_image = Image.open(icon_path)
+        # Try to create ICO using PIL
+        try:
+            from PIL import Image
+            
+            # Load the source image
+            icon_image = Image.open(source_path)
             
             # Convert to RGBA if not already
             if icon_image.mode != 'RGBA':
                 icon_image = icon_image.convert('RGBA')
-        
-        # Create multiple sizes for ICO file
-        ico_sizes = [(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]
-        ico_images = []
-        
-        for size in ico_sizes:
-            # High-quality resize
-            resized = icon_image.resize(size, Image.Resampling.LANCZOS)
-            ico_images.append(resized)
-        
-        # Save as ICO with multiple sizes
-        icon_image.save(ico_path, format='ICO', sizes=[(img.width, img.height) for img in ico_images])
-        
-        logger.debug(f"Created high-quality ICO file: {ico_path}")
-        return ico_path
+            
+            # Create multiple sizes for ICO file (Windows standard sizes)
+            ico_sizes = [(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]
+            
+            # Save as ICO with multiple sizes
+            icon_image.save(ico_path, format='ICO', sizes=ico_sizes)
+            
+            # Validate the created file
+            if validate_icon_file(ico_path):
+                logger.debug(f"Created high-quality ICO file: {ico_path}")
+                return ico_path
+            else:
+                logger.debug("Created ICO file failed validation")
+                return None
+                
+        except ImportError:
+            logger.debug("PIL not available for ICO creation")
+            # Return existing ICO if it exists, even if we can't create a new one
+            if os.path.exists(ico_path):
+                return ico_path
+            return None
         
     except Exception as e:
         logger.debug(f"Error creating ICO file: {e}")
@@ -288,20 +497,17 @@ def clear_default_icon(window: Union[tk.Tk, tk.Toplevel]) -> None:
         window: The Tkinter window to clear icons from
     """
     try:
-        # Try to clear any existing icon
+        # Try to clear any existing icon bitmap
         window.wm_iconbitmap("")
     except:
         pass
     
-    try:
-        # Clear iconphoto as well
-        window.wm_iconphoto(True, "")
-    except:
-        pass
+    # Note: Don't clear iconphoto with empty string as it causes errors
+    # The new icon will override the old one anyway
 
 
 def set_window_icon(window: Union[tk.Tk, tk.Toplevel], store_reference: bool = True) -> bool:
-    """Set the icon for a Tkinter window with minimal processing for best quality.
+    """Set the icon for a Tkinter window with cross-platform compatibility.
     
     Args:
         window: The Tkinter window to set the icon for
@@ -310,26 +516,203 @@ def set_window_icon(window: Union[tk.Tk, tk.Toplevel], store_reference: bool = T
     Returns:
         bool: True if icon was set successfully, False otherwise
     """
+    import platform
+    
     try:
-        # Load single high-quality icon
-        icons = load_application_icons()
-        if not icons or len(icons) == 0:
-            logger.debug("No icons available to set")
+        system = platform.system()
+        icon_path = get_icon_path()
+        
+        if not os.path.exists(icon_path):
+            logger.debug(f"Icon file not found at: {icon_path}")
             return False
         
-        # Use just the single high-quality icon
-        icon = icons[0]
-        window.wm_iconphoto(True, icon)
-        
-        # Store reference to prevent garbage collection
-        if store_reference:
-            window._vaitp_icon = icon
-        
-        logger.debug("Window icon set using single high-quality 64x64 PNG")
-        return True
+        # Platform-specific icon setting
+        if system == "Windows":
+            return _set_windows_icon(window, icon_path, store_reference)
+        elif system == "Darwin":
+            return _set_macos_icon(window, icon_path, store_reference)
+        else:  # Linux and others
+            return _set_linux_icon(window, icon_path, store_reference)
             
     except Exception as e:
         logger.debug(f"Error setting window icon: {e}")
+        return False
+
+
+def _set_windows_icon(window: Union[tk.Tk, tk.Toplevel], icon_path: str, store_reference: bool) -> bool:
+    """Set icon on Windows with ICO format preference."""
+    try:
+        base_dir = os.path.dirname(os.path.dirname(__file__))
+        
+        # Method 1: Try ICO format with absolute path (Windows prefers this)
+        if icon_path.endswith('.ico'):
+            try:
+                # Convert to absolute path for Windows
+                abs_ico_path = os.path.abspath(icon_path)
+                window.wm_iconbitmap(abs_ico_path)
+                logger.debug(f"Windows icon set using ICO format: {abs_ico_path}")
+                return True
+            except Exception as e:
+                logger.debug(f"Failed to set ICO icon with absolute path: {e}")
+                
+                # Try with default parameter
+                try:
+                    window.wm_iconbitmap(default=icon_path)
+                    logger.debug(f"Windows icon set using ICO format (default): {icon_path}")
+                    return True
+                except Exception as e2:
+                    logger.debug(f"Failed to set ICO icon with default parameter: {e2}")
+        
+        # Method 2: Try to find and use ICO file if not already using one
+        ico_path = os.path.join(base_dir, "icon.ico")
+        if os.path.exists(ico_path) and not icon_path.endswith('.ico'):
+            try:
+                abs_ico_path = os.path.abspath(ico_path)
+                window.wm_iconbitmap(abs_ico_path)
+                logger.debug(f"Windows icon set using found ICO: {abs_ico_path}")
+                return True
+            except Exception as e:
+                logger.debug(f"Failed to set found ICO icon: {e}")
+        
+        # Method 3: Try PNG with PhotoImage
+        png_paths = [
+            os.path.join(base_dir, "icon.png"),
+            icon_path if icon_path.endswith('.png') else None,
+            os.path.join(base_dir, "gui", "assets", "icons", "app_icon.png")
+        ]
+        
+        for png_path in png_paths:
+            if png_path and os.path.exists(png_path):
+                try:
+                    result = _set_photoimage_icon(window, png_path, store_reference)
+                    if result:
+                        logger.debug(f"Windows icon set using PNG PhotoImage: {png_path}")
+                        return True
+                except Exception as e:
+                    logger.debug(f"Failed to set PNG icon {png_path}: {e}")
+                    continue
+        
+        logger.debug("All Windows icon methods failed")
+        return False
+        
+    except Exception as e:
+        logger.debug(f"Error setting Windows icon: {e}")
+        return False
+
+
+def _set_macos_icon(window: Union[tk.Tk, tk.Toplevel], icon_path: str, store_reference: bool) -> bool:
+    """Set icon on macOS with ICNS format preference."""
+    try:
+        # Try ICNS format first (native macOS format)
+        if icon_path.endswith('.icns'):
+            try:
+                window.wm_iconbitmap(icon_path)
+                logger.debug("macOS icon set using ICNS format")
+                return True
+            except Exception as e:
+                logger.debug(f"Failed to set ICNS icon: {e}")
+        
+        # Fallback to PhotoImage method
+        return _set_photoimage_icon(window, icon_path, store_reference)
+        
+    except Exception as e:
+        logger.debug(f"Error setting macOS icon: {e}")
+        return False
+
+
+def _set_linux_icon(window: Union[tk.Tk, tk.Toplevel], icon_path: str, store_reference: bool) -> bool:
+    """Set icon on Linux using PhotoImage method."""
+    try:
+        return _set_photoimage_icon(window, icon_path, store_reference)
+    except Exception as e:
+        logger.debug(f"Error setting Linux icon: {e}")
+        return False
+
+
+def _set_photoimage_icon(window: Union[tk.Tk, tk.Toplevel], icon_path: str, store_reference: bool) -> bool:
+    """Set icon using PhotoImage method (cross-platform fallback)."""
+    try:
+        import tkinter as tk
+        
+        # Try tkinter PhotoImage first (works without PIL for PNG)
+        if icon_path.endswith('.png'):
+            try:
+                icon_photo = tk.PhotoImage(file=icon_path)
+                window.wm_iconphoto(True, icon_photo)
+                
+                if store_reference:
+                    window._vaitp_icon = icon_photo
+                
+                logger.debug("Icon set using tkinter PhotoImage method")
+                return True
+            except tk.TclError as e:
+                logger.debug(f"Tkinter PhotoImage failed: {e}")
+                # Try to find a smaller PNG or create one
+                return _try_alternative_png_icon(window, store_reference)
+        
+        # Try PIL if available (for non-PNG formats or resizing)
+        try:
+            from PIL import Image, ImageTk
+            
+            # Load and resize icon
+            icon_image = Image.open(icon_path)
+            if icon_image.mode not in ['RGBA', 'RGB']:
+                icon_image = icon_image.convert('RGBA')
+            
+            # Create 64x64 icon for title bar
+            icon_64 = icon_image.resize((64, 64), Image.Resampling.LANCZOS)
+            icon_photo = ImageTk.PhotoImage(icon_64)
+            
+            # Set the icon
+            window.wm_iconphoto(True, icon_photo)
+            
+            # Store reference to prevent garbage collection
+            if store_reference:
+                window._vaitp_icon = icon_photo
+            
+            logger.debug("Icon set using PIL PhotoImage method")
+            return True
+            
+        except ImportError:
+            logger.debug("PIL not available for non-PNG icon formats")
+            return False
+                
+    except Exception as e:
+        logger.debug(f"Error setting PhotoImage icon: {e}")
+        return False
+
+
+def _try_alternative_png_icon(window: Union[tk.Tk, tk.Toplevel], store_reference: bool) -> bool:
+    """Try to use alternative PNG icons when the main one fails."""
+    try:
+        import tkinter as tk
+        
+        # Try the GUI assets icon
+        base_dir = os.path.dirname(os.path.dirname(__file__))
+        alternative_paths = [
+            os.path.join(base_dir, "gui", "assets", "icons", "app_icon.png"),
+            os.path.join(base_dir, "gui", "assets", "icons", "test_icon.png")
+        ]
+        
+        for alt_path in alternative_paths:
+            if os.path.exists(alt_path):
+                try:
+                    icon_photo = tk.PhotoImage(file=alt_path)
+                    window.wm_iconphoto(True, icon_photo)
+                    
+                    if store_reference:
+                        window._vaitp_icon = icon_photo
+                    
+                    logger.debug(f"Icon set using alternative PNG: {alt_path}")
+                    return True
+                except tk.TclError:
+                    continue
+        
+        logger.debug("No suitable alternative PNG icons found")
+        return False
+        
+    except Exception as e:
+        logger.debug(f"Error trying alternative PNG icons: {e}")
         return False
 
 
