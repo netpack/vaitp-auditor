@@ -52,6 +52,7 @@ class GUIApplication:
     def _set_application_icon(self) -> None:
         """Set the application icon for the main window and globally."""
         from .icon_utils import set_window_icon, initialize_platform_icons, set_global_application_icon
+        import platform
         
         # Initialize platform-specific icons first
         try:
@@ -75,6 +76,59 @@ class GUIApplication:
             self.logger.debug("Window icon set successfully")
         else:
             self.logger.debug("Could not set window icon")
+        
+        # Windows-specific aggressive icon setting
+        if platform.system() == "Windows":
+            try:
+                self._force_windows_icon()
+            except Exception as e:
+                self.logger.debug(f"Windows aggressive icon setting failed: {e}")
+    
+    def _force_windows_icon(self) -> None:
+        """Force Windows icon setting with multiple methods."""
+        import os
+        import tkinter as tk
+        
+        try:
+            base_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "vaitp_auditor")
+            
+            # Try ICO file first
+            ico_path = os.path.join(base_dir, "icon.ico")
+            if os.path.exists(ico_path):
+                try:
+                    # Method 1: Absolute path
+                    abs_ico_path = os.path.abspath(ico_path)
+                    self.root.wm_iconbitmap(abs_ico_path)
+                    self.logger.debug(f"Windows ICO icon forced: {abs_ico_path}")
+                    return
+                except Exception as e:
+                    self.logger.debug(f"Windows ICO absolute path failed: {e}")
+                
+                try:
+                    # Method 2: Default parameter
+                    self.root.wm_iconbitmap(default=ico_path)
+                    self.logger.debug(f"Windows ICO icon forced (default): {ico_path}")
+                    return
+                except Exception as e:
+                    self.logger.debug(f"Windows ICO default failed: {e}")
+            
+            # Try PNG fallback
+            png_path = os.path.join(base_dir, "icon.png")
+            if os.path.exists(png_path):
+                try:
+                    icon_photo = tk.PhotoImage(file=png_path)
+                    self.root.wm_iconphoto(True, icon_photo)
+                    # Store reference to prevent garbage collection
+                    self.root._forced_icon = icon_photo
+                    self.logger.debug(f"Windows PNG icon forced: {png_path}")
+                    return
+                except Exception as e:
+                    self.logger.debug(f"Windows PNG fallback failed: {e}")
+            
+            self.logger.debug("All Windows icon forcing methods failed")
+            
+        except Exception as e:
+            self.logger.debug(f"Error in Windows icon forcing: {e}")
     
     def run(self) -> None:
         """
