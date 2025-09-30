@@ -38,6 +38,7 @@ class GUIApplication:
         self.session_controller: Optional['GUISessionController'] = None
         self.accessibility_manager: Optional[AccessibilityManager] = None
         self.logger = logging.getLogger(__name__)
+        self._icon_set = False  # Track if icon has been set
         
         # Check if GUI dependencies are available
         if ctk is None:
@@ -51,9 +52,14 @@ class GUIApplication:
     
     def _set_application_icon(self) -> None:
         """Set the application icon for the main window and globally."""
-        from .icon_utils import set_window_icon, initialize_platform_icons, set_global_application_icon
         import platform
-        import os
+        
+        # Skip if icon already set (prevent overwriting on Windows)
+        if hasattr(self, '_icon_set') and self._icon_set and platform.system() == "Windows":
+            self.logger.debug("Windows icon already set, skipping to prevent overwrite")
+            return
+        
+        from .icon_utils import set_window_icon, initialize_platform_icons, set_global_application_icon
         
         # Initialize platform-specific icons first
         try:
@@ -75,12 +81,13 @@ class GUIApplication:
         except Exception as e:
             self.logger.debug(f"Error setting global application icon: {e}")
         
-        # Set the window icon using standard method
-        success = set_window_icon(self.root, store_reference=True)
-        if success:
-            self.logger.debug("Window icon set successfully")
-        else:
-            self.logger.debug("Could not set window icon")
+        # Set the window icon using standard method (non-Windows only)
+        if platform.system() != "Windows":
+            success = set_window_icon(self.root, store_reference=True)
+            if success:
+                self.logger.debug("Window icon set successfully")
+            else:
+                self.logger.debug("Could not set window icon")
     
     def _set_windows_icon_aggressively(self) -> None:
         """Aggressively set Windows icon using multiple methods."""
@@ -162,6 +169,149 @@ class GUIApplication:
         except Exception as e:
             self.logger.error(f"Critical error in Windows icon setting: {e}")
     
+    def _set_application_icon_immediately(self) -> None:
+        """Set application icon immediately - Windows taskbar-focused approach."""
+        import platform
+        import os
+        import tkinter as tk
+        
+        try:
+            if platform.system() == "Windows":
+                # Windows: Focus on taskbar icon specifically
+                current_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+                ico_path = os.path.join(current_dir, "vaitp_auditor", "icon.ico")
+                png_path = os.path.join(current_dir, "vaitp_auditor", "icon.png")
+                
+                self.logger.info(f"Windows: Setting icon for taskbar")
+                self.logger.info(f"ICO path: {ico_path}")
+                self.logger.info(f"ICO exists: {os.path.exists(ico_path)}")
+                
+                # Step 0: Set Windows Application User Model ID (for taskbar identity)
+                try:
+                    import ctypes
+                    app_id = "VAITPResearch.VAITPAuditor.GUI.1.0"
+                    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
+                    self.logger.info(f"✅ Set Windows App User Model ID: {app_id}")
+                except Exception as e:
+                    self.logger.debug(f"App User Model ID failed: {e}")
+                
+                # Step 1: Ensure we have a valid ICO file
+                if not os.path.exists(ico_path) and os.path.exists(png_path):
+                    self.logger.info("Creating ICO file for Windows taskbar...")
+                    self._create_ico_from_png(png_path, ico_path)
+                
+                # Step 2: Set window properties that affect taskbar
+                try:
+                    # Set window class name (affects taskbar grouping)
+                    self.root.wm_class("VAITP-Auditor", "VAITP-Auditor")
+                    self.logger.debug("Set window class for taskbar")
+                except Exception as e:
+                    self.logger.debug(f"Window class failed: {e}")
+                
+                # Step 3: Set the icon using multiple methods
+                icon_set = False
+                
+                if os.path.exists(ico_path):
+                    # Method 1: Standard iconbitmap
+                    try:
+                        self.root.iconbitmap(ico_path)
+                        self.logger.info("✅ ICO icon set with iconbitmap")
+                        icon_set = True
+                    except Exception as e:
+                        self.logger.debug(f"iconbitmap failed: {e}")
+                    
+                    # Method 2: wm_iconbitmap (sometimes works when iconbitmap doesn't)
+                    if not icon_set:
+                        try:
+                            self.root.wm_iconbitmap(ico_path)
+                            self.logger.info("✅ ICO icon set with wm_iconbitmap")
+                            icon_set = True
+                        except Exception as e:
+                            self.logger.debug(f"wm_iconbitmap failed: {e}")
+                
+                # Step 4: PNG fallback for window icon (not taskbar)
+                if os.path.exists(png_path):
+                    try:
+                        photo = tk.PhotoImage(file=png_path)
+                        self.root.iconphoto(True, photo)
+                        self.root._icon_ref = photo
+                        self.logger.debug("PNG window icon set")
+                    except Exception as e:
+                        self.logger.debug(f"PNG icon failed: {e}")
+                
+                # Step 5: Force Windows to update taskbar
+                try:
+                    self.root.update_idletasks()
+                    # Don't lift() here as it can cause focus issues
+                    self.logger.debug("Forced Windows update")
+                except Exception as e:
+                    self.logger.debug(f"Windows update failed: {e}")
+                
+                if icon_set:
+                    self.logger.info("✅ Windows icon process completed")
+                    self._icon_set = True
+                else:
+                    self.logger.warning("❌ Windows icon setting failed")
+                
+            else:
+                # macOS/Linux: Use existing system
+                from .icon_utils import set_window_icon, initialize_platform_icons
+                
+                try:
+                    initialize_platform_icons()
+                    success = set_window_icon(self.root, store_reference=True)
+                    if success:
+                        self.logger.info("✅ Icon set successfully")
+                    else:
+                        self.logger.warning("❌ Icon setting failed")
+                except Exception as e:
+                    self.logger.error(f"❌ Icon setting error: {e}")
+                    
+        except Exception as e:
+            self.logger.error(f"❌ Critical error setting icon: {e}")
+    
+    def _create_ico_from_png(self, png_path: str, ico_path: str) -> bool:
+        """Create Windows-compatible ICO file from PNG."""
+        try:
+            from PIL import Image
+            
+            self.logger.info(f"Creating Windows ICO: {png_path} -> {ico_path}")
+            
+            # Load PNG
+            img = Image.open(png_path)
+            
+            # Ensure proper format for Windows
+            if img.mode not in ['RGBA', 'RGB']:
+                img = img.convert('RGBA')
+            
+            # Windows taskbar prefers these specific sizes
+            sizes = [(16, 16), (24, 24), (32, 32), (48, 48), (64, 64)]
+            
+            # Save as ICO with Windows-optimized settings
+            img.save(ico_path, format='ICO', sizes=sizes)
+            
+            # Verify the ICO was created and is valid
+            if os.path.exists(ico_path) and os.path.getsize(ico_path) > 0:
+                # Quick validation - check ICO header
+                with open(ico_path, 'rb') as f:
+                    header = f.read(4)
+                    if header[:2] == b'\x00\x00' and header[2:4] == b'\x01\x00':
+                        self.logger.info(f"✅ Valid ICO created: {ico_path} ({os.path.getsize(ico_path)} bytes)")
+                        return True
+                    else:
+                        self.logger.warning(f"❌ Invalid ICO header: {header.hex()}")
+                        return False
+            else:
+                self.logger.warning("❌ ICO file not created or empty")
+                return False
+                
+        except ImportError:
+            self.logger.warning("❌ PIL not available - cannot create ICO")
+            return False
+        except Exception as e:
+            self.logger.error(f"❌ ICO creation failed: {e}")
+            return False
+    
     def run(self) -> None:
         """
         Run the GUI application.
@@ -176,11 +326,12 @@ class GUIApplication:
             
             # Create the main application window (minimized initially)
             self.root = ctk.CTk()
+            
+            # Set application icon BEFORE setting title or geometry (Windows requirement)
+            self._set_application_icon_immediately()
+            
             self.root.title("VAITP-Auditor")
             self.root.geometry("800x600")
-            
-            # Set application icon
-            self._set_application_icon()
             
             # Center the main window on screen
             self.root.update_idletasks()

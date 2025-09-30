@@ -635,10 +635,19 @@ class ConfigurationStep(SetupStep):
         try:
             from tkinter import filedialog
             
+            # Temporarily release grab to allow dialog to appear on top
+            if hasattr(self.wizard, 'grab_release'):
+                self.wizard.grab_release()
+            
             folder_path = filedialog.askdirectory(
+                parent=self.wizard,
                 title="Select Generated Code Folder",
                 initialdir=self.generated_folder_var.get() if self.generated_folder_var.get() else None
             )
+            
+            # Restore grab after dialog closes
+            if hasattr(self.wizard, 'grab_set'):
+                self.wizard.grab_set()
             
             if folder_path:
                 self.generated_folder_var.set(folder_path)
@@ -650,16 +659,28 @@ class ConfigurationStep(SetupStep):
         except Exception as e:
             self.logger.error(f"Error browsing for generated folder: {e}")
             self.wizard.show_error(f"Error selecting folder: {str(e)}")
+            # Restore grab even on error
+            if hasattr(self.wizard, 'grab_set'):
+                self.wizard.grab_set()
     
     def _browse_expected_folder(self) -> None:
         """Browse for expected code folder."""
         try:
             from tkinter import filedialog
             
+            # Temporarily release grab to allow dialog to appear on top
+            if hasattr(self.wizard, 'grab_release'):
+                self.wizard.grab_release()
+            
             folder_path = filedialog.askdirectory(
+                parent=self.wizard,
                 title="Select Expected Code Folder",
                 initialdir=self.expected_folder_var.get() if self.expected_folder_var.get() else None
             )
+            
+            # Restore grab after dialog closes
+            if hasattr(self.wizard, 'grab_set'):
+                self.wizard.grab_set()
             
             if folder_path:
                 self.expected_folder_var.set(folder_path)
@@ -671,16 +692,28 @@ class ConfigurationStep(SetupStep):
         except Exception as e:
             self.logger.error(f"Error browsing for expected folder: {e}")
             self.wizard.show_error(f"Error selecting folder: {str(e)}")
+            # Restore grab even on error
+            if hasattr(self.wizard, 'grab_set'):
+                self.wizard.grab_set()
     
     def _browse_input_folder(self) -> None:
         """Browse for input code folder."""
         try:
             from tkinter import filedialog
             
+            # Temporarily release grab to allow dialog to appear on top
+            if hasattr(self.wizard, 'grab_release'):
+                self.wizard.grab_release()
+            
             folder_path = filedialog.askdirectory(
+                parent=self.wizard,
                 title="Select Input Code Folder",
                 initialdir=self.input_folder_var.get() if self.input_folder_var.get() else None
             )
+            
+            # Restore grab after dialog closes
+            if hasattr(self.wizard, 'grab_set'):
+                self.wizard.grab_set()
             
             if folder_path:
                 self.input_folder_var.set(folder_path)
@@ -692,6 +725,9 @@ class ConfigurationStep(SetupStep):
         except Exception as e:
             self.logger.error(f"Error browsing for input folder: {e}")
             self.wizard.show_error(f"Error selecting folder: {str(e)}")
+            # Restore grab even on error
+            if hasattr(self.wizard, 'grab_set'):
+                self.wizard.grab_set()
     
     def _create_database_configuration(self) -> None:
         """Create SQLite database configuration interface."""
@@ -843,7 +879,12 @@ class ConfigurationStep(SetupStep):
         try:
             from tkinter import filedialog
             
+            # Temporarily release grab to allow dialog to appear on top
+            if hasattr(self.wizard, 'grab_release'):
+                self.wizard.grab_release()
+            
             file_path = filedialog.askopenfilename(
+                parent=self.wizard,
                 title="Select SQLite Database File",
                 filetypes=[
                     ("SQLite Database", "*.db *.sqlite *.sqlite3"),
@@ -862,6 +903,10 @@ class ConfigurationStep(SetupStep):
         except Exception as e:
             self.logger.error(f"Error browsing for database file: {e}")
             self.wizard.show_error(f"Error selecting database file: {str(e)}")
+        finally:
+            # Restore grab after dialog closes
+            if hasattr(self.wizard, 'grab_set'):
+                self.wizard.grab_set()
     
     def _load_database_info(self, db_path: str) -> None:
         """Load database tables and enable table selection with progress feedback."""
@@ -1409,7 +1454,12 @@ class ConfigurationStep(SetupStep):
         try:
             from tkinter import filedialog
             
+            # Temporarily release grab to allow dialog to appear on top
+            if hasattr(self.wizard, 'grab_release'):
+                self.wizard.grab_release()
+            
             file_path = filedialog.askopenfilename(
+                parent=self.wizard,
                 title="Select Excel or CSV File",
                 filetypes=[
                     ("Excel Files", "*.xlsx *.xls"),
@@ -1430,6 +1480,10 @@ class ConfigurationStep(SetupStep):
         except Exception as e:
             self.logger.error(f"Error browsing for Excel/CSV file: {e}")
             self.wizard.show_error(f"Error selecting file: {str(e)}")
+        finally:
+            # Restore grab after dialog closes
+            if hasattr(self.wizard, 'grab_set'):
+                self.wizard.grab_set()
     
     def _load_excel_info(self, file_path: str) -> None:
         """Load Excel/CSV file information and enable selections."""
@@ -2560,25 +2614,14 @@ class SetupWizard(ctk.CTkToplevel):
     
     def _setup_window(self) -> None:
         """Configure the wizard window properties."""
+        # Set application icon FIRST (before other window properties)
+        self._set_wizard_icon_simple()
+        
         # Set window properties
         self.title("VAITP-Auditor: Session Setup")
         self.geometry(f"{self.gui_config.wizard_width}x{self.gui_config.wizard_height}")
         self.resizable(True, True)
         self.minsize(650, 550)  # Set minimum size to prevent too small windows
-        
-        # Set application icon
-        from .icon_utils import set_window_icon
-        import platform
-        
-        success = set_window_icon(self, store_reference=True)
-        if success:
-            self.logger.debug("Setup wizard icon set successfully")
-        else:
-            self.logger.debug("Could not set setup wizard icon")
-        
-        # Windows-specific icon setting for Setup Wizard
-        if platform.system() == "Windows":
-            self._set_windows_wizard_icon()
         
         # Make window modal and always on top
         self.transient(self.parent)
@@ -2593,41 +2636,97 @@ class SetupWizard(ctk.CTkToplevel):
         # Ensure window is visible and focused
         self.deiconify()  # Make sure it's not minimized
         self.grab_set()  # Make window modal
+        
+        # Set icon again after window is fully configured (in case it was overridden)
+        self._set_wizard_icon_simple()
     
-    def _set_windows_wizard_icon(self) -> None:
-        """Set Windows icon specifically for Setup Wizard."""
+    def _set_wizard_icon_simple(self) -> None:
+        """Set Setup Wizard icon - match main window approach."""
         import os
+        import platform
         import tkinter as tk
         
         try:
-            # Get icon paths
-            current_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-            base_dir = os.path.join(current_dir, "vaitp_auditor")
-            
-            # Try ICO first (Windows native)
-            ico_path = os.path.join(base_dir, "icon.ico")
-            if os.path.exists(ico_path):
+            if platform.system() == "Windows":
+                # Windows: Use same approach as main window
+                current_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+                ico_path = os.path.join(current_dir, "vaitp_auditor", "icon.ico")
+                png_path = os.path.join(current_dir, "vaitp_auditor", "icon.png")
+                
+                self.logger.info(f"Setup Wizard: Setting Windows icon")
+                self.logger.info(f"ICO path: {ico_path}")
+                self.logger.info(f"ICO exists: {os.path.exists(ico_path)}")
+                
+                # Step 0: Set Windows App User Model ID (for taskbar identity)
                 try:
-                    abs_ico_path = os.path.abspath(ico_path)
-                    self.wm_iconbitmap(abs_ico_path)
-                    self.logger.debug(f"Setup Wizard Windows ICO icon set: {ico_path}")
-                    return
+                    import ctypes
+                    app_id = "VAITPResearch.VAITPAuditor.GUI.1.0"
+                    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
+                    self.logger.debug(f"Setup Wizard: Set App User Model ID")
                 except Exception as e:
-                    self.logger.debug(f"Setup Wizard ICO failed: {e}")
-            
-            # Try PNG fallback
-            png_path = os.path.join(base_dir, "icon.png")
-            if os.path.exists(png_path):
+                    self.logger.debug(f"Setup Wizard App User Model ID failed: {e}")
+                
+                # Step 1: Set window class (like main window)
                 try:
-                    icon_photo = tk.PhotoImage(file=png_path)
-                    self.wm_iconphoto(True, icon_photo)
-                    self._wizard_icon_ref = icon_photo  # Prevent GC
-                    self.logger.debug(f"Setup Wizard Windows PNG icon set: {png_path}")
+                    self.wm_class("VAITP-Auditor", "VAITP-Auditor")
+                    self.logger.debug("Setup Wizard: Set window class")
                 except Exception as e:
-                    self.logger.debug(f"Setup Wizard PNG failed: {e}")
+                    self.logger.debug(f"Setup Wizard window class failed: {e}")
+                
+                # Step 2: Try multiple ICO methods (like main window)
+                icon_set = False
+                
+                if os.path.exists(ico_path):
+                    # Method 1: iconbitmap
+                    try:
+                        self.iconbitmap(ico_path)
+                        self.logger.info("✅ Setup Wizard ICO set with iconbitmap")
+                        icon_set = True
+                    except Exception as e:
+                        self.logger.debug(f"Setup Wizard iconbitmap failed: {e}")
+                    
+                    # Method 2: wm_iconbitmap (backup)
+                    if not icon_set:
+                        try:
+                            self.wm_iconbitmap(ico_path)
+                            self.logger.info("✅ Setup Wizard ICO set with wm_iconbitmap")
+                            icon_set = True
+                        except Exception as e:
+                            self.logger.debug(f"Setup Wizard wm_iconbitmap failed: {e}")
+                
+                # Step 3: PNG fallback (like main window)
+                if os.path.exists(png_path):
+                    try:
+                        photo = tk.PhotoImage(file=png_path)
+                        self.iconphoto(True, photo)
+                        self._wizard_icon_ref = photo  # Prevent GC
+                        self.logger.debug("Setup Wizard PNG icon set")
+                    except Exception as e:
+                        self.logger.debug(f"Setup Wizard PNG failed: {e}")
+                
+                # Step 4: Force update (like main window)
+                try:
+                    self.update_idletasks()
+                    self.logger.debug("Setup Wizard: Forced update")
+                except Exception as e:
+                    self.logger.debug(f"Setup Wizard update failed: {e}")
+                
+                if icon_set:
+                    self.logger.info("✅ Setup Wizard Windows icon process completed")
+                else:
+                    self.logger.warning("❌ Setup Wizard Windows icon setting failed")
+                        
+            else:
+                # macOS/Linux: Use existing system
+                from .icon_utils import set_window_icon
+                success = set_window_icon(self, store_reference=True)
+                if success:
+                    self.logger.debug("✅ Setup wizard icon set successfully")
+                else:
+                    self.logger.debug("❌ Could not set setup wizard icon")
                     
         except Exception as e:
-            self.logger.debug(f"Setup Wizard Windows icon setting failed: {e}")
+            self.logger.error(f"❌ Setup Wizard icon error: {e}")
         
         # Center on screen since parent might be hidden
         self.update_idletasks()
