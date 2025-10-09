@@ -152,9 +152,12 @@ def launch_gui_mode(args) -> None:
         
         # Set up logging for GUI mode
         log_level = "DEBUG" if hasattr(args, 'debug') and args.debug else "INFO"
+        # For GUI mode launched from CLI, disable console output to prevent console windows
+        # Only enable console output in debug mode
+        console_output = hasattr(args, 'debug') and args.debug
         setup_logging(
             level=log_level,
-            console_output=True,
+            console_output=console_output,
             session_id=None,
             log_file=getattr(args, 'log_file', None)
         )

@@ -121,10 +121,20 @@ class DataSource(ABC):
             List[CodePair]: Sampled code pairs.
         """
         if sample_percentage >= 100:
+            self._logger.debug(f"No sampling needed (100% requested): returning all {len(data)} items")
             return data
         
         sample_size = max(1, int(len(data) * sample_percentage / 100))
-        return random.sample(data, sample_size)
+        self._logger.debug(f"Sampling {sample_percentage}% of {len(data)} items: "
+                          f"calculated sample_size = {sample_size}")
+        
+        if sample_size >= len(data):
+            self._logger.debug(f"Sample size ({sample_size}) >= data size ({len(data)}), returning all data")
+            return data
+        
+        sampled_data = random.sample(data, sample_size)
+        self._logger.debug(f"Random sampling completed: selected {len(sampled_data)} items")
+        return sampled_data
 
     def _handle_encoding_error(self, file_path: str, error: UnicodeError) -> Optional[str]:
         """

@@ -26,6 +26,8 @@ class ExcelSource(DataSource):
         self._expected_code_column: Optional[str] = None
         self._input_code_column: Optional[str] = None
         self._identifier_column: Optional[str] = None
+        self._model_column: Optional[str] = None
+        self._prompting_strategy_column: Optional[str] = None
         self._dataframe: Optional[pd.DataFrame] = None
 
     def configure(self) -> bool:
@@ -138,12 +140,14 @@ class ExcelSource(DataSource):
             })
             return False
 
-    def load_data(self, sample_percentage: float) -> List[CodePair]:
+    def load_data(self, sample_percentage: float, selected_model: Optional[str] = None, selected_strategy: Optional[str] = None) -> List[CodePair]:
         """
         Load code pairs from the configured Excel/CSV file.
         
         Args:
             sample_percentage: Percentage of data to sample (1-100).
+            selected_model: Optional specific model to filter by.
+            selected_strategy: Optional specific prompting strategy to filter by.
             
         Returns:
             List[CodePair]: List of code pairs ready for review.
@@ -159,7 +163,10 @@ class ExcelSource(DataSource):
             # Always reload dataframe to ensure file still exists and is accessible
             self._dataframe = self._load_dataframe()
             
-            all_data = self._convert_dataframe_to_code_pairs(self._dataframe)
+            # Apply filtering if specified
+            filtered_df = self._apply_filtering(self._dataframe, selected_model, selected_strategy)
+            
+            all_data = self._convert_dataframe_to_code_pairs(filtered_df)
             
             # Cache total count
             self._total_count = len(all_data)
@@ -167,8 +174,15 @@ class ExcelSource(DataSource):
             # Sample data if needed
             sampled_data = self._sample_data(all_data, sample_percentage)
             
+            filter_info = []
+            if selected_model:
+                filter_info.append(f"model={selected_model}")
+            if selected_strategy:
+                filter_info.append(f"strategy={selected_strategy}")
+            filter_str = f" (filtered by {', '.join(filter_info)})" if filter_info else ""
+            
             self._logger.info(f"Loaded {len(sampled_data)} code pairs from Excel/CSV file "
-                            f"({sample_percentage}% of {self._total_count} total)")
+                            f"({sample_percentage}% of {self._total_count} total{filter_str})")
             
             return sampled_data
 
@@ -176,7 +190,9 @@ class ExcelSource(DataSource):
             self._log_error_with_context(e, {
                 'file_path': self._file_path,
                 'sheet_name': self._sheet_name,
-                'sample_percentage': sample_percentage
+                'sample_percentage': sample_percentage,
+                'selected_model': selected_model,
+                'selected_strategy': selected_strategy
             })
             raise DataSourceError(f"Failed to load data from Excel/CSV file: {e}")
 
@@ -270,6 +286,32 @@ class ExcelSource(DataSource):
                 
         except Exception as e:
             raise DataSourceError(f"Failed to load data from file: {e}")
+    
+    def _apply_filtering(self, df: pd.DataFrame, selected_model: Optional[str] = None, selected_strategy: Optional[str] = None) -> pd.DataFrame:
+        """
+        Apply model and strategy filtering to the dataframe.
+        
+        Args:
+            df: Original dataframe.
+            selected_model: Optional specific model to filter by.
+            selected_strategy: Optional specific prompting strategy to filter by.
+            
+        Returns:
+            pd.DataFrame: Filtered dataframe.
+        """
+        filtered_df = df.copy()
+        
+        # Apply model filtering
+        if selected_model and self._model_column and self._model_column in df.columns:
+            filtered_df = filtered_df[filtered_df[self._model_column] == selected_model]
+            self._logger.info(f"Filtered by model '{selected_model}': {len(filtered_df)} rows remaining")
+        
+        # Apply strategy filtering
+        if selected_strategy and self._prompting_strategy_column and self._prompting_strategy_column in df.columns:
+            filtered_df = filtered_df[filtered_df[self._prompting_strategy_column] == selected_strategy]
+            self._logger.info(f"Filtered by strategy '{selected_strategy}': {len(filtered_df)} rows remaining")
+        
+        return filtered_df
 
     def _select_column(self, columns: List[str], column_type: str, optional: bool = False) -> Optional[str]:
         """
@@ -418,6 +460,24 @@ class ExcelSource(DataSource):
                         if not input_code:  # Empty string
                             input_code = None
                 
+                # Get model name (optional)
+                model_name = None
+                if self._model_column:
+                    model_value = row[self._model_column]
+                    if pd.notna(model_value):
+                        model_name = str(model_value).strip()
+                        if not model_name:  # Empty string
+                            model_name = None
+                
+                # Get prompting strategy (optional)
+                prompting_strategy = None
+                if self._prompting_strategy_column:
+                    strategy_value = row[self._prompting_strategy_column]
+                    if pd.notna(strategy_value):
+                        prompting_strategy = str(strategy_value).strip()
+                        if not prompting_strategy:  # Empty string
+                            prompting_strategy = None
+                
                 source_info = {
                     'source_type': 'excel',
                     'file_path': self._file_path,
@@ -426,7 +486,11 @@ class ExcelSource(DataSource):
                     'identifier_column': self._identifier_column,
                     'generated_code_column': self._generated_code_column,
                     'expected_code_column': self._expected_code_column,
-                    'input_code_column': self._input_code_column
+                    'input_code_column': self._input_code_column,
+                    'model_column': self._model_column,
+                    'prompting_strategy_column': self._prompting_strategy_column,
+                    'model_name': model_name,
+                    'prompting_strategy': prompting_strategy
                 }
                 
                 code_pair = CodePair(

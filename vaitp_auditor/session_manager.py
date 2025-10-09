@@ -99,14 +99,32 @@ class SessionManager:
         # Load data from source with comprehensive error handling
         try:
             self.logger.info("Loading data from configured source")
-            code_pairs = data_source.load_data(config.sample_percentage)
+            
+            # Check if data source supports filtering (SQLite and Excel)
+            if hasattr(data_source, 'load_data') and config.data_source_type in ['sqlite', 'excel']:
+                # Pass filtering parameters for SQLite and Excel sources
+                code_pairs = data_source.load_data(
+                    config.sample_percentage,
+                    selected_model=config.selected_model,
+                    selected_strategy=config.selected_strategy
+                )
+            else:
+                # Folder sources don't support filtering
+                code_pairs = data_source.load_data(config.sample_percentage)
             
             if not code_pairs:
                 error_msg = "No code pairs loaded from data source"
                 self.logger.error(error_msg)
                 raise ValueError(error_msg)
             
-            self.logger.info(f"Successfully loaded {len(code_pairs)} code pairs")
+            filter_info = []
+            if config.selected_model:
+                filter_info.append(f"model={config.selected_model}")
+            if config.selected_strategy:
+                filter_info.append(f"strategy={config.selected_strategy}")
+            filter_str = f" (filtered by {', '.join(filter_info)})" if filter_info else ""
+            
+            self.logger.info(f"Successfully loaded {len(code_pairs)} code pairs{filter_str}")
             
         except Exception as e:
             error_msg = f"Failed to load data from source: {e}"

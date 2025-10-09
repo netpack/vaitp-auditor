@@ -178,6 +178,21 @@ reports/temp/
 *.log
 *.pid
 
+# Personal report files and test results
+reports/*.xlsx
+reports/*.csv
+reports/*.json
+reports/*.html
+reports/*.pdf
+*.db
+*.sqlite
+*.sqlite3
+vaitp_results.*
+test_results.*
+my_reports/
+personal_tests/
+audit_results/
+
 # Build artifacts
 *.dmg
 *.exe

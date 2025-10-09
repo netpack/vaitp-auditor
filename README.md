@@ -35,6 +35,9 @@ pip install -e ".[gui]"
 
 # Run the application
 vaitp-auditor
+
+# macOS users: For proper icon in dock, use the launcher instead:
+python vaitp_auditor_launcher.py
 ```
 
 ### Screenshot
@@ -48,6 +51,9 @@ vaitp-auditor
 ```bash
 # Launch the modern desktop interface (default if GUI dependencies available)
 vaitp-auditor
+
+# macOS users: For proper custom icon in dock, use:
+python vaitp_auditor_launcher.py
 # Or explicitly request GUI mode
 vaitp-auditor --gui
 ```

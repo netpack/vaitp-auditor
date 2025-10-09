@@ -7,7 +7,7 @@ and the existing SessionManager, following the MVC pattern.
 
 import logging
 from typing import Optional, Dict, Any, Callable
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from ..core.models import CodePair, ReviewResult, SessionConfig
@@ -44,6 +44,8 @@ class GUISessionController:
         self._report_manager: Optional[ReportManager] = None
         self._code_differ = CodeDiffer()
         
+
+        
         # GUI components (will be set by the application)
         self._main_window = None
         self._setup_wizard = None
@@ -54,6 +56,8 @@ class GUISessionController:
         self._session_paused = False
         self._current_code_pair: Optional[CodePair] = None
         self._review_start_time: Optional[datetime] = None
+        self._pause_start_time: Optional[datetime] = None
+        self._total_paused_time: float = 0.0  # Total time paused in seconds
         
         # Callbacks for window transitions
         self._wizard_completion_callback: Optional[Callable[[Dict[str, Any]], None]] = None
@@ -254,8 +258,20 @@ class GUISessionController:
             # Set the data source in session manager
             self._session_manager._data_source = data_source
             
-            # Initialize report manager for resumed session
-            self._report_manager.initialize_report(session_id, 'excel')
+            # Try to find and resume existing report file
+            existing_report_path = self._find_existing_report_file(session_id)
+            if existing_report_path:
+                self.logger.info(f"Found existing report file: {existing_report_path}")
+                try:
+                    # Determine format from file extension
+                    output_format = 'excel' if existing_report_path.suffix.lower() in ['.xlsx', '.xls'] else 'csv'
+                    self._report_manager.resume_report(session_id, str(existing_report_path), output_format)
+                except Exception as resume_error:
+                    self.logger.warning(f"Failed to resume existing report, creating new one: {resume_error}")
+                    self._report_manager.initialize_report(session_id, 'excel')
+            else:
+                self.logger.info("No existing report file found, creating new one")
+                self._report_manager.initialize_report(session_id, 'excel')
             
             self._is_session_active = True
             self._session_paused = False
@@ -377,7 +393,10 @@ class GUISessionController:
                 'table_name': config.get('table_name', ''),
                 'identifier_column': config.get('identifier_column', ''),
                 'generated_code_column': config.get('generated_code_column', ''),
-                'expected_code_column': config.get('expected_code_column')
+                'expected_code_column': config.get('expected_code_column'),
+                'input_code_column': config.get('input_code_column'),
+                'model_column': config.get('model_column'),
+                'prompting_strategy_column': config.get('prompting_strategy_column')
             }
         elif data_source_type == 'excel':
             data_source_params = {
@@ -386,7 +405,9 @@ class GUISessionController:
                 'identifier_column': config.get('identifier_column', ''),
                 'generated_code_column': config.get('generated_code_column', ''),
                 'expected_code_column': config.get('expected_code_column'),
-                'input_code_column': config.get('input_code_column')
+                'input_code_column': config.get('input_code_column'),
+                'model_column': config.get('model_column'),
+                'prompting_strategy_column': config.get('prompting_strategy_column')
             }
         
         return SessionConfig(
@@ -394,7 +415,9 @@ class GUISessionController:
             data_source_type=data_source_type,
             data_source_params=data_source_params,
             sample_percentage=float(config.get('sampling_percentage', 100)),
-            output_format=config.get('output_format', 'excel')
+            output_format=config.get('output_format', 'excel'),
+            selected_model=config.get('selected_model'),
+            selected_strategy=config.get('selected_strategy')
         )
     
     def _create_data_source_from_config(self, config: Dict[str, Any]):
@@ -442,6 +465,12 @@ class GUISessionController:
             input_column = config.get('input_code_column')
             if input_column:
                 data_source._input_code_column = input_column
+            model_column = config.get('model_column')
+            if model_column:
+                data_source._model_column = model_column
+            strategy_column = config.get('prompting_strategy_column')
+            if strategy_column:
+                data_source._prompting_strategy_column = strategy_column
             
             # Mark as configured for SQLite
             data_source._configured = True
@@ -460,6 +489,12 @@ class GUISessionController:
             input_column = config.get('input_code_column')
             if input_column:
                 data_source._input_code_column = input_column
+            model_column = config.get('model_column')
+            if model_column:
+                data_source._model_column = model_column
+            strategy_column = config.get('prompting_strategy_column')
+            if strategy_column:
+                data_source._prompting_strategy_column = strategy_column
             
             # Mark as configured for Excel
             data_source._configured = True
@@ -513,8 +548,10 @@ class GUISessionController:
             code_pair = self._session_manager._current_session.remaining_queue[0]
             self._current_code_pair = code_pair
             
-            # Record review start time for timing metrics
-            self._review_start_time = datetime.utcnow()
+            # Record review start time for timing metrics and reset pause tracking
+            self._review_start_time = datetime.now(timezone.utc)
+            self._total_paused_time = 0.0
+            self._pause_start_time = None
             
             # Update progress information
             progress_info = self._get_current_progress()
@@ -569,10 +606,8 @@ class GUISessionController:
             
             code_pair = self._session_manager._current_session.remaining_queue.pop(0)
             
-            # Calculate review time
-            review_time = 0.0
-            if self._review_start_time:
-                review_time = (datetime.utcnow() - self._review_start_time).total_seconds()
+            # Calculate effective review time (excluding paused time)
+            review_time = self.get_effective_review_time()
             
             # Generate code diff for the review result
             code_diff = ""
@@ -590,18 +625,24 @@ class GUISessionController:
             # Convert verdict_id to proper display text for validation
             verdict_display_text = self._get_verdict_display_text(verdict_id)
             
+            # Extract model and strategy information from source_info
+            model_name = code_pair.source_info.get('model_name') if code_pair.source_info else None
+            prompting_strategy = code_pair.source_info.get('prompting_strategy') if code_pair.source_info else None
+            
             # Create complete ReviewResult
             review_result = ReviewResult(
                 review_id=len(self._session_manager._current_session.completed_reviews) + 1,
                 source_identifier=code_pair.identifier,
                 experiment_name=self._session_manager._current_session.experiment_name,
-                review_timestamp_utc=datetime.utcnow(),
+                review_timestamp_utc=datetime.now(timezone.utc),
                 reviewer_verdict=verdict_display_text,
                 reviewer_comment=comment,
                 time_to_review_seconds=review_time,
                 expected_code=code_pair.expected_code or "",
                 generated_code=code_pair.generated_code,
-                code_diff=code_diff
+                code_diff=code_diff,
+                model_name=model_name,
+                prompting_strategy=prompting_strategy
             )
             
             # Add to completed reviews
@@ -642,6 +683,108 @@ class GUISessionController:
             
             self._handle_session_error(f"Error submitting verdict: {str(e)}", e)
     
+    def pause_session(self) -> bool:
+        """
+        Pause the current review session.
+        
+        Returns:
+            bool: True if session was paused successfully, False otherwise
+        """
+        if not self._is_session_active:
+            self.logger.warning("Cannot pause - no active session")
+            return False
+        
+        if self._session_paused:
+            self.logger.warning("Session is already paused")
+            return False
+        
+        try:
+            self._session_paused = True
+            self._pause_start_time = datetime.now(timezone.utc)
+            
+            # Update UI to show paused state
+            if self._main_window:
+                self._main_window.set_paused_state(True)
+            
+            self.logger.info("Session paused successfully")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error pausing session: {e}")
+            # Reset state on error
+            self._session_paused = False
+            self._pause_start_time = None
+            return False
+    
+    def resume_session(self) -> bool:
+        """
+        Resume the paused review session.
+        
+        Returns:
+            bool: True if session was resumed successfully, False otherwise
+        """
+        if not self._is_session_active:
+            self.logger.warning("Cannot resume - no active session")
+            return False
+        
+        if not self._session_paused:
+            self.logger.warning("Session is not paused")
+            return False
+        
+        try:
+            # Calculate paused time and add to total
+            if self._pause_start_time:
+                paused_duration = (datetime.now(timezone.utc) - self._pause_start_time).total_seconds()
+                self._total_paused_time += paused_duration
+                self._pause_start_time = None
+            
+            self._session_paused = False
+            
+            # Update UI to show resumed state
+            if self._main_window:
+                self._main_window.set_paused_state(False)
+            
+            self.logger.info(f"Session resumed successfully (total paused time: {self._total_paused_time:.1f}s)")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error resuming session: {e}")
+            # Reset state on error
+            self._session_paused = True
+            return False
+    
+    def is_session_paused(self) -> bool:
+        """
+        Check if the session is currently paused.
+        
+        Returns:
+            bool: True if session is paused, False otherwise
+        """
+        return self._session_paused
+    
+    def get_effective_review_time(self) -> float:
+        """
+        Get the effective review time excluding paused time.
+        
+        Returns:
+            float: Review time in seconds excluding paused time
+        """
+        if not self._review_start_time:
+            return 0.0
+        
+        # Calculate total elapsed time
+        current_time = datetime.now(timezone.utc)
+        total_elapsed = (current_time - self._review_start_time).total_seconds()
+        
+        # Calculate current pause time if session is paused
+        current_pause_time = 0.0
+        if self._session_paused and self._pause_start_time:
+            current_pause_time = (current_time - self._pause_start_time).total_seconds()
+        
+        # Return effective time (total - paused time)
+        effective_time = total_elapsed - self._total_paused_time - current_pause_time
+        return max(0.0, effective_time)  # Ensure non-negative
+
     def handle_undo_request(self) -> None:
         """
         Handle undo request with complete MVC implementation and proper state validation.
@@ -932,10 +1075,12 @@ class GUISessionController:
             self._review_start_time = None
             
             # Update main window state and get progress info
-            progress_info = None
+            progress_info = self._get_current_progress()
             if self._main_window:
-                progress_info = self._get_current_progress()
-                self._main_window.set_completion_state(progress_info.experiment_name)
+                try:
+                    self._main_window.set_completion_state(progress_info.experiment_name)
+                except Exception as e:
+                    self.logger.warning(f"Failed to set completion state on main window: {e}")
             
             # Finalize session and create final report
             final_report_path = None
@@ -946,17 +1091,38 @@ class GUISessionController:
                 else:
                     self.logger.warning("Failed to create final report")
             
-            # Update completion dialog to include report path
-            if self._main_window and final_report_path:
-                # Show updated completion dialog with report path
-                self._error_handler.show_info_dialog(
-                    self._get_root_window(),
-                    "Review Complete",
-                    f"Congratulations! You have completed the review session.\n\n"
-                    f"Experiment: {progress_info.experiment_name}\n"
-                    f"Total reviews: {progress_info.total}\n\n"
-                    f"Final report saved to:\n{final_report_path}"
-                )
+            # Always show completion dialog, even if report creation failed
+            if self._main_window:
+                try:
+                    if final_report_path:
+                        # Show success dialog with report path
+                        experiment_name = progress_info.experiment_name if progress_info else 'Unknown'
+                        total_reviews = progress_info.total if progress_info else 'Unknown'
+                        
+                        message = (f"Congratulations! You have completed the review session.\n\n"
+                                  f"Experiment: {experiment_name}\n"
+                                  f"Total reviews: {total_reviews}\n\n"
+                                  f"Final report saved to:\n{final_report_path}")
+                    else:
+                        # Show completion dialog even if report failed
+                        experiment_name = progress_info.experiment_name if progress_info else 'Unknown'
+                        total_reviews = progress_info.total if progress_info else 'Unknown'
+                        
+                        message = (f"Review session completed!\n\n"
+                                  f"Experiment: {experiment_name}\n"
+                                  f"Total reviews: {total_reviews}\n\n"
+                                  f"Warning: There was an issue creating the final report. "
+                                  f"Please check the logs for more information.")
+                    
+                    self._error_handler.show_info_dialog(
+                        self._get_root_window(),
+                        "Review Complete",
+                        message
+                    )
+                except Exception as dialog_error:
+                    # Fallback: at least log the completion
+                    self.logger.error(f"Failed to show completion dialog: {dialog_error}")
+                    print(f"Session completed! Final report: {final_report_path or 'Failed to create'}")
             
             # Call completion callback
             if self._session_completion_callback:
@@ -1035,9 +1201,9 @@ class GUISessionController:
                                 code_pair.generated_code
                             )
                         
-                        # Apply expected-generated diff highlighting only
-                        code_panels.apply_diff_highlighting(expected_generated_diff, self.gui_config)
-                        self.logger.debug("Expected-generated diff highlighting applied successfully")
+                        # Note: Automatic diff highlighting disabled - users can manually toggle diff buttons
+                        # code_panels.apply_diff_highlighting(expected_generated_diff, self.gui_config)
+                        self.logger.debug("Automatic diff highlighting disabled - manual toggle only")
                     except Exception as diff_error:
                         self.logger.warning(f"Diff highlighting failed: {diff_error}")
             
@@ -1075,16 +1241,44 @@ class GUISessionController:
         """
         self.logger.error(f"Session error: {message}")
         
+        # Provide more user-friendly error messages for common issues
+        user_message = message
+        exception_str = str(exception)
+        
+        # Check for Excel compatibility issues
+        if ("cannot be used in worksheets" in exception_str or 
+            "Excel file due to incompatible content" in exception_str):
+            user_message = ("Failed to save review to Excel file due to incompatible content.\n\n"
+                          "The generated code contains characters or data that Excel cannot handle. "
+                          "The system has automatically attempted to switch to CSV format or sanitize the data.\n\n"
+                          "If this error persists, consider:\n"
+                          "• Using CSV output format instead of Excel\n"
+                          "• Checking if the generated code contains binary data or special characters\n"
+                          "• Contacting support if the issue continues")
+        
+        # Check for file permission issues
+        elif ("Permission denied" in exception_str or "PermissionError" in exception_str):
+            user_message = ("Failed to save review due to file permission issues.\n\n"
+                          "Please check that:\n"
+                          "• The output directory is writable\n"
+                          "• No other application has the output file open\n"
+                          "• You have sufficient permissions to write to the selected location")
+        
+        # Check for disk space issues
+        elif ("No space left" in exception_str or "ENOSPC" in exception_str):
+            user_message = ("Failed to save review due to insufficient disk space.\n\n"
+                          "Please free up disk space and try again.")
+        
         if self._main_window:
             self._error_handler.show_error_dialog(
                 self._get_root_window(),
                 "Session Error",
-                message,
-                str(exception)
+                user_message,
+                exception_str if user_message == message else f"Technical details: {exception_str}"
             )
         else:
             # Fallback for when no GUI is available
-            print(f"Error: {message}")
+            self.logger.error(f"Error: {user_message}")
     
     def update_view_state(self) -> None:
         """
@@ -1108,69 +1302,6 @@ class GUISessionController:
             
         except Exception as e:
             self.logger.warning(f"Failed to update view state: {e}")
-    
-    def pause_session(self) -> bool:
-        """
-        Pause the current session.
-        
-        Returns:
-            bool: True if session was paused successfully
-        """
-        if not self._is_session_active:
-            return False
-        
-        try:
-            self.logger.info("Pausing session")
-            self._session_paused = True
-            
-            # Save current state
-            if self._session_manager:
-                self._session_manager.save_session_state()
-            
-            # Update view state
-            self.update_view_state()
-            
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Error pausing session: {e}")
-            return False
-    
-    def resume_session(self) -> bool:
-        """
-        Resume a paused session.
-        
-        Returns:
-            bool: True if session was resumed successfully
-        """
-        if not self._is_session_active or not self._session_paused:
-            return False
-        
-        try:
-            self.logger.info("Resuming session")
-            self._session_paused = False
-            
-            # Update view state
-            self.update_view_state()
-            
-            # Reload current code pair if available
-            if self._current_code_pair:
-                self._load_code_pair_with_enhancements(self._current_code_pair)
-            
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Error resuming session: {e}")
-            return False
-    
-    def is_session_paused(self) -> bool:
-        """
-        Check if the current session is paused.
-        
-        Returns:
-            bool: True if session is paused
-        """
-        return self._session_paused
     
     def get_current_progress(self) -> Dict[str, Any]:
         """
@@ -1498,3 +1629,348 @@ class GUISessionController:
             return {
                 'error': str(e)
             }
+    
+    def handle_flag_vulnerable_request(self, comment: str = "") -> None:
+        """
+        Handle flag vulnerable request - marks current input as vulnerable and loads a replacement.
+        
+        Args:
+            comment: Optional comment explaining why the input was flagged as vulnerable
+        """
+        if not self._session_manager or not self._main_window:
+            self.logger.error("Cannot flag vulnerable - no active session or window")
+            return
+        
+        if self._session_paused:
+            self.logger.warning("Cannot flag vulnerable - session is paused")
+            return
+        
+        # Set processing state to prevent other interactions
+        if self._main_window:
+            self._main_window.set_processing_state(True)
+        
+        try:
+            self.logger.info(f"Flagging current input as vulnerable. Comment: '{comment}'")
+            
+            # Get the current code pair
+            if not self._session_manager._current_session.remaining_queue:
+                self.logger.warning("No code pair to flag as vulnerable")
+                if self._main_window:
+                    self._main_window.set_processing_state(False)
+                return
+            
+            # Remove the current code pair from the queue (it will be flagged)
+            flagged_code_pair = self._session_manager._current_session.remaining_queue.pop(0)
+            
+            # Calculate review time
+            review_time = 0.0
+            if self._review_start_time:
+                review_time = (datetime.now(timezone.utc) - self._review_start_time).total_seconds()
+            
+            # Create a flagged entry record
+            flagged_entry = {
+                'flagged_id': len(getattr(self._session_manager._current_session, 'flagged_entries', [])) + 1,
+                'source_identifier': flagged_code_pair.identifier,
+                'experiment_name': self._session_manager._current_session.experiment_name,
+                'flagged_timestamp_utc': datetime.now(timezone.utc).isoformat(),
+                'flagged_comment': comment,
+                'time_to_flag_seconds': review_time,
+                'expected_code': flagged_code_pair.expected_code or "",
+                'generated_code': flagged_code_pair.generated_code,
+                'input_code': flagged_code_pair.input_code or ""
+            }
+            
+            # Store flagged entry in session
+            if not hasattr(self._session_manager._current_session, 'flagged_entries'):
+                self._session_manager._current_session.flagged_entries = []
+            self._session_manager._current_session.flagged_entries.append(flagged_entry)
+            
+            # Save flagged entry to separate file
+            self._save_flagged_entry(flagged_entry)
+            
+            # If using percentage sampling, try to load a replacement from the original dataset
+            if hasattr(self._session_manager._current_session, 'data_source') and self._session_manager._current_session.data_source:
+                try:
+                    # Get a new random sample to replace the flagged one
+                    replacement_pairs = self._session_manager._current_session.data_source.load_data(1.0)  # Load all data
+                    
+                    # Filter out already reviewed and flagged items
+                    completed_ids = set(self._session_manager._current_session.completed_reviews)
+                    flagged_ids = set(entry['source_identifier'] for entry in self._session_manager._current_session.flagged_entries)
+                    remaining_ids = set(pair.identifier for pair in self._session_manager._current_session.remaining_queue)
+                    
+                    available_pairs = [
+                        pair for pair in replacement_pairs 
+                        if pair.identifier not in completed_ids 
+                        and pair.identifier not in flagged_ids 
+                        and pair.identifier not in remaining_ids
+                    ]
+                    
+                    if available_pairs:
+                        # Add a random replacement to the queue
+                        import random
+                        replacement_pair = random.choice(available_pairs)
+                        self._session_manager._current_session.remaining_queue.append(replacement_pair)
+                        self.logger.info(f"Added replacement code pair: {replacement_pair.identifier}")
+                    else:
+                        self.logger.warning("No replacement code pairs available")
+                        
+                except Exception as replacement_error:
+                    self.logger.warning(f"Failed to load replacement code pair: {replacement_error}")
+            
+            # Save session state to preserve flagged entries
+            self._session_manager.save_session_state()
+            
+            # Show success feedback
+            if self._main_window:
+                # Show a brief success message
+                self._error_handler.show_info_dialog(
+                    self._get_root_window(),
+                    "Input Flagged as Vulnerable",
+                    f"The current input has been flagged as vulnerable and saved to the flagged entries file.\n\n"
+                    f"Identifier: {flagged_code_pair.identifier}\n"
+                    f"Comment: {comment if comment else 'No comment provided'}\n\n"
+                    f"A replacement will be loaded if available.",
+                    auto_close_ms=10000  # Auto-close after 10 seconds
+                )
+            
+            # Reset current code pair
+            self._current_code_pair = None
+            self._review_start_time = None
+            
+            # Re-enable UI after successful processing
+            if self._main_window:
+                self._main_window.set_processing_state(False)
+            
+            # Load next code pair
+            self.load_next_code_pair()
+            
+        except Exception as e:
+            self.logger.error(f"Error flagging vulnerable input: {e}")
+            
+            # Re-enable UI
+            if self._main_window:
+                self._main_window.set_processing_state(False)
+            
+            self._handle_session_error(f"Error flagging vulnerable input: {str(e)}", e)
+    
+    def _save_flagged_entry(self, flagged_entry: Dict[str, Any]) -> None:
+        """
+        Save a flagged entry to the flagged entries file.
+        
+        Args:
+            flagged_entry: Dictionary containing flagged entry information
+        """
+        try:
+            import csv
+            from pathlib import Path
+            
+            # Create flagged entries directory if it doesn't exist
+            flagged_dir = Path("reports") / "flagged_entries"
+            flagged_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Generate flagged entries file path
+            experiment_name = flagged_entry['experiment_name']
+            flagged_file_path = flagged_dir / f"{experiment_name}_flagged_entries.csv"
+            
+            # Check if file exists to determine if we need to write headers
+            file_exists = flagged_file_path.exists()
+            
+            # Write flagged entry to CSV file
+            with open(flagged_file_path, 'a', newline='', encoding='utf-8') as f:
+                fieldnames = [
+                    'flagged_id', 'source_identifier', 'experiment_name',
+                    'flagged_timestamp_utc', 'flagged_comment', 'time_to_flag_seconds',
+                    'expected_code', 'generated_code', 'input_code'
+                ]
+                
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                
+                # Write header if file is new
+                if not file_exists:
+                    writer.writeheader()
+                
+                # Write flagged entry
+                writer.writerow(flagged_entry)
+            
+            self.logger.info(f"Flagged entry saved to: {flagged_file_path}")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to save flagged entry: {e}")
+            raise
+    
+    def handle_flag_not_vulnerable_request(self, comment: str = "") -> None:
+        """
+        Handle flag NOT vulnerable expected request - marks current expected code as NOT vulnerable.
+        
+        This is used to flag expected code that should NOT be considered vulnerable,
+        helping to build a dataset of safe/non-vulnerable code examples.
+        
+        Args:
+            comment: Optional comment explaining why the expected code is NOT vulnerable
+        """
+        if not self._session_manager or not self._main_window:
+            self.logger.error("Cannot flag NOT vulnerable - no active session or window")
+            return
+        
+        if self._session_paused:
+            self.logger.warning("Cannot flag NOT vulnerable - session is paused")
+            return
+        
+        # Set processing state to prevent other interactions
+        if self._main_window:
+            self._main_window.set_processing_state(True)
+        
+        try:
+            self.logger.info(f"Flagging current expected code as NOT vulnerable. Comment: '{comment}'")
+            
+            # Get the current code pair
+            if not self._session_manager._current_session.remaining_queue:
+                self.logger.warning("No code pair to flag as NOT vulnerable")
+                if self._main_window:
+                    self._main_window.set_processing_state(False)
+                return
+            
+            # Get the current code pair (don't remove from queue yet)
+            current_code_pair = self._session_manager._current_session.remaining_queue[0]
+            
+            # Calculate review time
+            review_time = 0.0
+            if self._review_start_time:
+                review_time = (datetime.now(timezone.utc) - self._review_start_time).total_seconds()
+            
+            # Create a NOT vulnerable entry record
+            not_vulnerable_entry = {
+                'not_vulnerable_id': len(getattr(self._session_manager._current_session, 'not_vulnerable_entries', [])) + 1,
+                'source_identifier': current_code_pair.identifier,
+                'experiment_name': self._session_manager._current_session.experiment_name,
+                'flagged_timestamp_utc': datetime.now(timezone.utc).isoformat(),
+                'flagged_comment': comment,
+                'time_to_flag_seconds': review_time,
+                'expected_code': current_code_pair.expected_code or "",
+                'generated_code': current_code_pair.generated_code,
+                'input_code': current_code_pair.input_code or "",
+                'flag_type': 'NOT_VULNERABLE_EXPECTED'
+            }
+            
+            # Store NOT vulnerable entry in session
+            if not hasattr(self._session_manager._current_session, 'not_vulnerable_entries'):
+                self._session_manager._current_session.not_vulnerable_entries = []
+            self._session_manager._current_session.not_vulnerable_entries.append(not_vulnerable_entry)
+            
+            # Save NOT vulnerable entry to separate file
+            self._save_not_vulnerable_entry(not_vulnerable_entry)
+            
+            # Save session state to preserve NOT vulnerable entries
+            self._session_manager.save_session_state()
+            
+            # Show success feedback
+            if self._main_window:
+                # Show a brief success message
+                self._error_handler.show_info_dialog(
+                    self._get_root_window(),
+                    "Expected Code Flagged as NOT Vulnerable",
+                    f"The expected code has been flagged as NOT vulnerable and saved to the safe entries file.\n\n"
+                    f"Identifier: {current_code_pair.identifier}\n"
+                    f"Comment: {comment if comment else 'No comment provided'}\n\n"
+                    f"You can continue reviewing this entry normally.",
+                    auto_close_ms=8000  # Auto-close after 8 seconds
+                )
+            
+            # Re-enable UI after successful processing (don't load next pair, continue with current)
+            if self._main_window:
+                self._main_window.set_processing_state(False)
+            
+        except Exception as e:
+            self.logger.error(f"Error flagging NOT vulnerable expected: {e}")
+            
+            # Re-enable UI
+            if self._main_window:
+                self._main_window.set_processing_state(False)
+            
+            self._handle_session_error(f"Error flagging NOT vulnerable expected: {str(e)}", e)
+    
+    def _save_not_vulnerable_entry(self, not_vulnerable_entry: Dict[str, Any]) -> None:
+        """
+        Save a NOT vulnerable entry to the safe entries file.
+        
+        Args:
+            not_vulnerable_entry: Dictionary containing NOT vulnerable entry information
+        """
+        try:
+            import csv
+            from pathlib import Path
+            
+            # Create flagged entries directory if it doesn't exist
+            flagged_dir = Path("reports") / "flagged_entries"
+            flagged_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Generate safe entries file path
+            experiment_name = not_vulnerable_entry['experiment_name']
+            safe_file_path = flagged_dir / f"{experiment_name}_safe_entries.csv"
+            
+            # Check if file exists to determine if we need to write headers
+            file_exists = safe_file_path.exists()
+            
+            # Write NOT vulnerable entry to CSV file
+            with open(safe_file_path, 'a', newline='', encoding='utf-8') as f:
+                fieldnames = [
+                    'not_vulnerable_id', 'source_identifier', 'experiment_name',
+                    'flagged_timestamp_utc', 'flagged_comment', 'time_to_flag_seconds',
+                    'expected_code', 'generated_code', 'input_code', 'flag_type'
+                ]
+                
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                
+                # Write header if file is new
+                if not file_exists:
+                    writer.writeheader()
+                
+                # Write NOT vulnerable entry
+                writer.writerow(not_vulnerable_entry)
+            
+            self.logger.info(f"NOT vulnerable entry saved to: {safe_file_path}")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to save NOT vulnerable entry: {e}")
+            raise
+    
+    def _find_existing_report_file(self, session_id: str) -> Optional[Path]:
+        """
+        Find existing report file for a session.
+        
+        Args:
+            session_id: Session identifier to search for
+            
+        Returns:
+            Path to existing report file or None if not found
+        """
+        try:
+            from pathlib import Path
+            import glob
+            
+            # Check reports directory
+            reports_dir = Path("reports")
+            if not reports_dir.exists():
+                return None
+            
+            # Look for files that start with the session_id
+            patterns = [
+                f"{session_id}_*.xlsx",
+                f"{session_id}_*.csv"
+            ]
+            
+            existing_files = []
+            for pattern in patterns:
+                existing_files.extend(reports_dir.glob(pattern))
+            
+            if existing_files:
+                # Return the most recent file (by modification time)
+                most_recent = max(existing_files, key=lambda p: p.stat().st_mtime)
+                return most_recent
+            
+            return None
+            
+        except Exception as e:
+            self.logger.warning(f"Error searching for existing report files: {e}")
+            return None

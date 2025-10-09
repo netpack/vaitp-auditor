@@ -77,7 +77,10 @@ def setup_logging(
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
     except Exception as e:
-        print(f"Warning: Could not create log file {log_file}: {e}")
+        # Avoid print statements that could cause console windows in GUI mode
+        # Only print to console if console_output is explicitly enabled
+        if console_output:
+            print(f"Warning: Could not create log file {log_file}: {e}")
     
     # Add console handler if requested
     if console_output:

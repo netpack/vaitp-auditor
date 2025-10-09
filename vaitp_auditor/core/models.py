@@ -20,8 +20,7 @@ class CodePair:
         """Validate required fields."""
         if not self.identifier:
             raise ValueError("identifier cannot be empty")
-        if not self.generated_code:
-            raise ValueError("generated_code cannot be empty")
+        # Note: generated_code can be empty - it's a valid failure case for review
     
     def validate_integrity(self) -> bool:
         """Perform comprehensive data integrity validation."""
@@ -62,6 +61,8 @@ class ReviewResult:
     expected_code: Optional[str]
     generated_code: str
     code_diff: str
+    model_name: Optional[str] = None  # AI model used to generate the code
+    prompting_strategy: Optional[str] = None  # Prompting strategy used
 
     def __post_init__(self):
         """Validate required fields and data types."""
@@ -84,6 +85,7 @@ class ReviewResult:
             'Invalid Code', 
             'Wrong Vulnerability', 
             'Partial Success',
+            'Flag NOT Vulnerable Expected',
             'Custom',
             'Undo',
             'Quit'
@@ -204,6 +206,8 @@ class SessionConfig:
     data_source_params: Dict[str, Any]
     sample_percentage: float
     output_format: str  # 'excel', 'csv'
+    selected_model: Optional[str] = None  # Optional model filtering
+    selected_strategy: Optional[str] = None  # Optional prompting strategy filtering
 
     def __post_init__(self):
         """Validate configuration values."""

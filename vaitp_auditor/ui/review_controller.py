@@ -87,7 +87,9 @@ class ReviewUIController:
                         time_to_review_seconds=0,
                         expected_code=None,
                         generated_code="",
-                        code_diff=""
+                        code_diff="",
+                        model_name=None,
+                        prompting_strategy=None
                     )
                 else:
                     # Undo failed, show message and continue with current pair
@@ -97,6 +99,10 @@ class ReviewUIController:
             
             # Calculate review time
             review_time = time.time() - start_time
+            
+            # Extract model and strategy information from source_info
+            model_name = code_pair.source_info.get('model_name') if code_pair.source_info else None
+            prompting_strategy = code_pair.source_info.get('prompting_strategy') if code_pair.source_info else None
             
             # Create and return ReviewResult
             review_result = ReviewResult(
@@ -109,7 +115,9 @@ class ReviewUIController:
                 time_to_review_seconds=review_time,
                 expected_code=code_pair.expected_code,
                 generated_code=code_pair.generated_code,
-                code_diff=self._get_diff_text(code_pair.expected_code, code_pair.generated_code)
+                code_diff=self._get_diff_text(code_pair.expected_code, code_pair.generated_code),
+                model_name=model_name,
+                prompting_strategy=prompting_strategy
             )
             
             return review_result
@@ -126,6 +134,10 @@ class ReviewUIController:
             
             review_time = time.time() - start_time
             
+            # Extract model and strategy information from source_info
+            model_name = code_pair.source_info.get('model_name') if code_pair.source_info else None
+            prompting_strategy = code_pair.source_info.get('prompting_strategy') if code_pair.source_info else None
+            
             return ReviewResult(
                 review_id=self._get_next_review_id(),
                 source_identifier=code_pair.identifier,
@@ -136,7 +148,9 @@ class ReviewUIController:
                 time_to_review_seconds=review_time,
                 expected_code=code_pair.expected_code,
                 generated_code=code_pair.generated_code,
-                code_diff=self._get_diff_text(code_pair.expected_code, code_pair.generated_code)
+                code_diff=self._get_diff_text(code_pair.expected_code, code_pair.generated_code),
+                model_name=model_name,
+                prompting_strategy=prompting_strategy
             )
 
     def handle_user_input(self) -> Tuple[str, str]:

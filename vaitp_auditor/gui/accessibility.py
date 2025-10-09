@@ -394,6 +394,10 @@ Verdict Buttons:
 • F: Failure - No Change
 • I: Invalid Code
 • W: Wrong Vulnerability
+
+Additional Actions:
+• V: Flag Vulnerable Input
+• N: Flag NOT Vulnerable Expected
 • P: Partial Success
 • C: Custom
 

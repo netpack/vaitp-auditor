@@ -432,6 +432,10 @@ class ConfigurationStep(SetupStep):
         self.generated_column_dropdown: Optional[ctk.CTkComboBox] = None
         self.expected_column_var: Optional[ctk.StringVar] = None
         self.expected_column_dropdown: Optional[ctk.CTkComboBox] = None
+        self.model_column_var: Optional[ctk.StringVar] = None
+        self.model_column_dropdown: Optional[ctk.CTkComboBox] = None
+        self.prompting_strategy_column_var: Optional[ctk.StringVar] = None
+        self.prompting_strategy_column_dropdown: Optional[ctk.CTkComboBox] = None
         
         # Excel configuration widgets
         self.excel_file_var: Optional[ctk.StringVar] = None
@@ -446,6 +450,10 @@ class ConfigurationStep(SetupStep):
         self.excel_expected_column_dropdown: Optional[ctk.CTkComboBox] = None
         self.excel_input_column_var: Optional[ctk.StringVar] = None
         self.excel_input_column_dropdown: Optional[ctk.CTkComboBox] = None
+        self.excel_model_column_var: Optional[ctk.StringVar] = None
+        self.excel_model_column_dropdown: Optional[ctk.CTkComboBox] = None
+        self.excel_prompting_strategy_column_var: Optional[ctk.StringVar] = None
+        self.excel_prompting_strategy_column_dropdown: Optional[ctk.CTkComboBox] = None
         
         # Loading indicator
         self.loading_label: Optional[ctk.CTkLabel] = None
@@ -863,7 +871,41 @@ class ConfigurationStep(SetupStep):
             values=["Select table first..."],
             state="disabled"
         )
-        self.input_column_dropdown.pack(pady=(0, 10), fill="x")
+        self.input_column_dropdown.pack(pady=(0, 5), fill="x")
+        
+        # Model column (optional)
+        model_col_label = ctk.CTkLabel(
+            columns_frame,
+            text="Model Column (Optional):",
+            font=ctk.CTkFont(size=12, weight="bold")
+        )
+        model_col_label.pack(pady=(5, 2), anchor="w")
+        
+        self.model_column_var = ctk.StringVar()
+        self.model_column_dropdown = ctk.CTkComboBox(
+            columns_frame,
+            variable=self.model_column_var,
+            values=["Select table first..."],
+            state="disabled"
+        )
+        self.model_column_dropdown.pack(pady=(0, 5), fill="x")
+        
+        # Prompting strategy column (optional)
+        strategy_col_label = ctk.CTkLabel(
+            columns_frame,
+            text="Prompting Strategy Column (Optional):",
+            font=ctk.CTkFont(size=12, weight="bold")
+        )
+        strategy_col_label.pack(pady=(5, 2), anchor="w")
+        
+        self.prompting_strategy_column_var = ctk.StringVar()
+        self.prompting_strategy_column_dropdown = ctk.CTkComboBox(
+            columns_frame,
+            variable=self.prompting_strategy_column_var,
+            values=["Select table first..."],
+            state="disabled"
+        )
+        self.prompting_strategy_column_dropdown.pack(pady=(0, 10), fill="x")
         
         # Loading indicator (initially hidden)
         self.loading_label = ctk.CTkLabel(
@@ -1238,6 +1280,64 @@ class ConfigurationStep(SetupStep):
         
         return None
     
+    def _auto_detect_model_column(self, columns: list) -> Optional[str]:
+        """Auto-detect the model column from available columns.
+        
+        Args:
+            columns: List of available column names
+            
+        Returns:
+            str: The detected model column name, or None if not found
+        """
+        # Common model column patterns
+        model_patterns = [
+            'model_name', 'model', 'ai_model', 'llm_model', 'language_model',
+            'model_type', 'model_id', 'model_version', 'engine', 'llm',
+            'gpt_model', 'claude_model', 'gemini_model'
+        ]
+        
+        # First, look for exact matches
+        for pattern in model_patterns:
+            if pattern in columns:
+                return pattern
+        
+        # Then, look for columns that contain model patterns
+        for column in columns:
+            column_lower = column.lower()
+            if any(pattern in column_lower for pattern in model_patterns):
+                return column
+        
+        return None
+    
+    def _auto_detect_prompting_strategy_column(self, columns: list) -> Optional[str]:
+        """Auto-detect the prompting strategy column from available columns.
+        
+        Args:
+            columns: List of available column names
+            
+        Returns:
+            str: The detected prompting strategy column name, or None if not found
+        """
+        # Common prompting strategy column patterns
+        strategy_patterns = [
+            'prompting_strategy', 'prompt_strategy', 'strategy', 'prompt_type',
+            'prompting_method', 'prompt_method', 'approach', 'technique',
+            'prompt_template', 'template', 'prompt_format', 'format'
+        ]
+        
+        # First, look for exact matches
+        for pattern in strategy_patterns:
+            if pattern in columns:
+                return pattern
+        
+        # Then, look for columns that contain strategy patterns
+        for column in columns:
+            column_lower = column.lower()
+            if any(pattern in column_lower for pattern in strategy_patterns):
+                return column
+        
+        return None
+    
     def _update_sqlite_columns_with_autodetection(self, columns: list) -> None:
         """Update SQLite column dropdowns with auto-detection for all column types.
         
@@ -1249,6 +1349,8 @@ class ConfigurationStep(SetupStep):
         generated_column = self._auto_detect_generated_code_column(columns)
         expected_column = self._auto_detect_expected_code_column(columns)
         input_column = self._auto_detect_input_code_column(columns)
+        model_column = self._auto_detect_model_column(columns)
+        strategy_column = self._auto_detect_prompting_strategy_column(columns)
         
         # Update identifier column dropdown
         self.identifier_column_dropdown.configure(values=["(Auto-detect)"] + columns, state="normal")
@@ -1282,6 +1384,24 @@ class ConfigurationStep(SetupStep):
         else:
             self.input_column_dropdown.set("(None)")
         
+        # Update model column dropdown
+        if self.model_column_dropdown:
+            self.model_column_dropdown.configure(values=["(None)"] + columns, state="normal")
+            if model_column:
+                self.model_column_dropdown.set(model_column)
+                self.logger.info(f"Auto-detected model column: {model_column}")
+            else:
+                self.model_column_dropdown.set("(None)")
+        
+        # Update prompting strategy column dropdown
+        if self.prompting_strategy_column_dropdown:
+            self.prompting_strategy_column_dropdown.configure(values=["(None)"] + columns, state="normal")
+            if strategy_column:
+                self.prompting_strategy_column_dropdown.set(strategy_column)
+                self.logger.info(f"Auto-detected prompting strategy column: {strategy_column}")
+            else:
+                self.prompting_strategy_column_dropdown.set("(None)")
+        
         # Show summary of auto-detections
         detections = []
         if id_column:
@@ -1292,6 +1412,10 @@ class ConfigurationStep(SetupStep):
             detections.append(f"Expected: {expected_column}")
         if input_column:
             detections.append(f"Input: {input_column}")
+        if model_column:
+            detections.append(f"Model: {model_column}")
+        if strategy_column:
+            detections.append(f"Strategy: {strategy_column}")
         
         if detections:
             self.logger.info(f"Auto-detected columns - {', '.join(detections)}")
@@ -1300,7 +1424,15 @@ class ConfigurationStep(SetupStep):
     
     def _reset_column_dropdowns(self) -> None:
         """Reset all column dropdowns to disabled state."""
-        for dropdown in [self.identifier_column_dropdown, self.generated_column_dropdown, self.expected_column_dropdown, self.input_column_dropdown]:
+        dropdowns = [
+            self.identifier_column_dropdown, 
+            self.generated_column_dropdown, 
+            self.expected_column_dropdown, 
+            self.input_column_dropdown,
+            self.model_column_dropdown,
+            self.prompting_strategy_column_dropdown
+        ]
+        for dropdown in dropdowns:
             if dropdown:
                 dropdown.configure(values=["Select table first..."], state="disabled")
                 dropdown.set("Select table first...")
@@ -1438,7 +1570,41 @@ class ConfigurationStep(SetupStep):
             values=["Select file first..."],
             state="disabled"
         )
-        self.excel_input_column_dropdown.pack(pady=(0, 8), fill="x")
+        self.excel_input_column_dropdown.pack(pady=(0, 4), fill="x")
+        
+        # Model column (optional)
+        model_col_label = ctk.CTkLabel(
+            columns_frame,
+            text="Model Column (Optional):",
+            font=ctk.CTkFont(size=12, weight="bold")
+        )
+        model_col_label.pack(pady=(4, 2), anchor="w")
+        
+        self.excel_model_column_var = ctk.StringVar()
+        self.excel_model_column_dropdown = ctk.CTkComboBox(
+            columns_frame,
+            variable=self.excel_model_column_var,
+            values=["Select file first..."],
+            state="disabled"
+        )
+        self.excel_model_column_dropdown.pack(pady=(0, 4), fill="x")
+        
+        # Prompting strategy column (optional)
+        strategy_col_label = ctk.CTkLabel(
+            columns_frame,
+            text="Prompting Strategy Column (Optional):",
+            font=ctk.CTkFont(size=12, weight="bold")
+        )
+        strategy_col_label.pack(pady=(4, 2), anchor="w")
+        
+        self.excel_prompting_strategy_column_var = ctk.StringVar()
+        self.excel_prompting_strategy_column_dropdown = ctk.CTkComboBox(
+            columns_frame,
+            variable=self.excel_prompting_strategy_column_var,
+            values=["Select file first..."],
+            state="disabled"
+        )
+        self.excel_prompting_strategy_column_dropdown.pack(pady=(0, 8), fill="x")
         
         # Loading indicator (initially hidden)
         if not self.loading_label:
@@ -1608,6 +1774,20 @@ class ConfigurationStep(SetupStep):
                 self.excel_input_column_dropdown.set("None (skip)")
                 self.logger.debug("Updated input code column dropdown")
             
+            # Add "None (skip)" option for optional model column
+            model_values = ["None (skip)"] + columns
+            if self.excel_model_column_dropdown:
+                self.excel_model_column_dropdown.configure(values=model_values, state="normal")
+                self.excel_model_column_dropdown.set("None (skip)")
+                self.logger.debug("Updated model column dropdown")
+            
+            # Add "None (skip)" option for optional prompting strategy column
+            strategy_values = ["None (skip)"] + columns
+            if self.excel_prompting_strategy_column_dropdown:
+                self.excel_prompting_strategy_column_dropdown.configure(values=strategy_values, state="normal")
+                self.excel_prompting_strategy_column_dropdown.set("None (skip)")
+                self.logger.debug("Updated prompting strategy column dropdown")
+            
             # Try to auto-suggest common column mappings
             self._auto_suggest_column_mappings(columns)
             
@@ -1624,6 +1804,8 @@ class ConfigurationStep(SetupStep):
             generated_column = self._auto_detect_generated_code_column(columns)
             expected_column = self._auto_detect_expected_code_column(columns)
             input_column = self._auto_detect_input_code_column(columns)
+            model_column = self._auto_detect_model_column(columns)
+            strategy_column = self._auto_detect_prompting_strategy_column(columns)
             
             # Auto-suggest identifier column
             if id_column and self.excel_identifier_column_dropdown:
@@ -1645,6 +1827,16 @@ class ConfigurationStep(SetupStep):
                 self.excel_input_column_dropdown.set(input_column)
                 self.logger.info(f"Auto-suggested input code column: {input_column}")
             
+            # Auto-suggest model column
+            if model_column and self.excel_model_column_dropdown:
+                self.excel_model_column_dropdown.set(model_column)
+                self.logger.info(f"Auto-suggested model column: {model_column}")
+            
+            # Auto-suggest prompting strategy column
+            if strategy_column and self.excel_prompting_strategy_column_dropdown:
+                self.excel_prompting_strategy_column_dropdown.set(strategy_column)
+                self.logger.info(f"Auto-suggested prompting strategy column: {strategy_column}")
+            
             # Show summary of auto-detections
             detections = []
             if id_column:
@@ -1653,6 +1845,12 @@ class ConfigurationStep(SetupStep):
                 detections.append(f"Generated: {generated_column}")
             if expected_column:
                 detections.append(f"Expected: {expected_column}")
+            if input_column:
+                detections.append(f"Input: {input_column}")
+            if model_column:
+                detections.append(f"Model: {model_column}")
+            if strategy_column:
+                detections.append(f"Strategy: {strategy_column}")
             
             if detections:
                 self.logger.info(f"Auto-detected Excel columns - {', '.join(detections)}")
@@ -1798,13 +1996,23 @@ class ConfigurationStep(SetupStep):
             if identifier_column in ["(Auto-detect)", ""]:
                 identifier_column = None  # Will be auto-detected by data source
             
+            model_column = self.model_column_var.get() if self.model_column_var else None
+            if model_column in ["(None)", "None (skip)", ""]:
+                model_column = None
+            
+            strategy_column = self.prompting_strategy_column_var.get() if self.prompting_strategy_column_var else None
+            if strategy_column in ["(None)", "None (skip)", ""]:
+                strategy_column = None
+            
             return {
                 "database_path": self.db_file_var.get().strip() if self.db_file_var else "",
                 "table_name": self.table_var.get() if self.table_var else "",
                 "identifier_column": identifier_column,
                 "generated_code_column": self.generated_column_var.get() if self.generated_column_var else "",
                 "expected_code_column": expected_column,
-                "input_code_column": input_column
+                "input_code_column": input_column,
+                "model_column": model_column,
+                "prompting_strategy_column": strategy_column
             }
         except Exception as e:
             self.logger.error(f"Error getting database data: {e}")
@@ -1821,12 +2029,22 @@ class ConfigurationStep(SetupStep):
             if input_column == "None (skip)":
                 input_column = None
             
+            model_column = self.excel_model_column_var.get() if self.excel_model_column_var else None
+            if model_column == "None (skip)":
+                model_column = None
+            
+            strategy_column = self.excel_prompting_strategy_column_var.get() if self.excel_prompting_strategy_column_var else None
+            if strategy_column == "None (skip)":
+                strategy_column = None
+            
             data = {
                 "file_path": self.excel_file_var.get().strip() if self.excel_file_var else "",
                 "identifier_column": self.excel_identifier_column_var.get() if self.excel_identifier_column_var else "",
                 "generated_code_column": self.excel_generated_column_var.get() if self.excel_generated_column_var else "",
                 "expected_code_column": expected_column,
-                "input_code_column": input_column
+                "input_code_column": input_column,
+                "model_column": model_column,
+                "prompting_strategy_column": strategy_column
             }
             
             # Add sheet name for Excel files
@@ -2218,6 +2436,290 @@ class SessionResumptionStep(SetupStep):
             return {"action": "new"}
 
 
+class FilteringStep(SetupStep):
+    """Step 4: Model and prompting strategy filtering (for SQLite and Excel sources only)."""
+    
+    def __init__(self, wizard: 'SetupWizard'):
+        """Initialize the filtering step."""
+        super().__init__(wizard)
+        self.model_var: Optional[ctk.StringVar] = None
+        self.model_dropdown: Optional[ctk.CTkComboBox] = None
+        self.strategy_var: Optional[ctk.StringVar] = None
+        self.strategy_dropdown: Optional[ctk.CTkComboBox] = None
+        self.available_models: list = []
+        self.available_strategies: list = []
+    
+    def create_widgets(self, parent: ctk.CTkFrame) -> None:
+        """Create widgets for filtering step."""
+        self.frame = parent
+        
+        # Check if this step should be shown
+        data_source_type = self._get_selected_data_source_type()
+        if data_source_type not in ['sqlite', 'excel']:
+            # Skip this step for folder data sources
+            self._create_skip_message(parent)
+            return
+        
+        # Title
+        title_label = ctk.CTkLabel(
+            parent,
+            text="Step 4: Filter by Model and Strategy",
+            font=ctk.CTkFont(size=18, weight="bold")
+        )
+        title_label.pack(pady=(20, 10))
+        
+        # Description
+        desc_label = ctk.CTkLabel(
+            parent,
+            text="Select specific AI models and prompting strategies to review.\nLeave as 'All' to review all available data.",
+            font=ctk.CTkFont(size=12)
+        )
+        desc_label.pack(pady=(0, 20))
+        
+        # Model selection frame
+        model_frame = ctk.CTkFrame(parent)
+        model_frame.pack(pady=10, padx=40, fill="x")
+        
+        model_title = ctk.CTkLabel(
+            model_frame,
+            text="AI Model Selection:",
+            font=ctk.CTkFont(size=14, weight="bold")
+        )
+        model_title.pack(pady=(15, 10))
+        
+        model_label = ctk.CTkLabel(
+            model_frame,
+            text="Select AI Model:",
+            font=ctk.CTkFont(size=12, weight="bold")
+        )
+        model_label.pack(pady=(0, 5), anchor="w")
+        
+        self.model_var = ctk.StringVar(value="All Models")
+        self.model_dropdown = ctk.CTkComboBox(
+            model_frame,
+            variable=self.model_var,
+            values=["All Models"],
+            state="readonly"
+        )
+        self.model_dropdown.pack(pady=(0, 15), padx=10, fill="x")
+        
+        # Prompting strategy selection frame
+        strategy_frame = ctk.CTkFrame(parent)
+        strategy_frame.pack(pady=10, padx=40, fill="x")
+        
+        strategy_title = ctk.CTkLabel(
+            strategy_frame,
+            text="Prompting Strategy Selection:",
+            font=ctk.CTkFont(size=14, weight="bold")
+        )
+        strategy_title.pack(pady=(15, 10))
+        
+        strategy_label = ctk.CTkLabel(
+            strategy_frame,
+            text="Select Prompting Strategy:",
+            font=ctk.CTkFont(size=12, weight="bold")
+        )
+        strategy_label.pack(pady=(0, 5), anchor="w")
+        
+        self.strategy_var = ctk.StringVar(value="All Strategies")
+        self.strategy_dropdown = ctk.CTkComboBox(
+            strategy_frame,
+            variable=self.strategy_var,
+            values=["All Strategies"],
+            state="readonly"
+        )
+        self.strategy_dropdown.pack(pady=(0, 15), padx=10, fill="x")
+        
+        # Load available options
+        self._load_filtering_options()
+    
+    def _create_skip_message(self, parent: ctk.CTkFrame) -> None:
+        """Create a message indicating this step is skipped for folder sources."""
+        # Title
+        title_label = ctk.CTkLabel(
+            parent,
+            text="Step 4: Filter by Model and Strategy",
+            font=ctk.CTkFont(size=18, weight="bold")
+        )
+        title_label.pack(pady=(20, 10))
+        
+        # Skip message
+        skip_frame = ctk.CTkFrame(parent)
+        skip_frame.pack(pady=40, padx=40, fill="both", expand=True)
+        
+        skip_label = ctk.CTkLabel(
+            skip_frame,
+            text="Model and strategy filtering is only available\nfor SQLite and Excel data sources.\n\nThis step is automatically skipped for folder sources.",
+            font=ctk.CTkFont(size=14),
+            text_color="gray"
+        )
+        skip_label.pack(expand=True)
+    
+    def _get_selected_data_source_type(self) -> str:
+        """Get the selected data source type from the previous step."""
+        # Find the DataSourceStep and get its selection
+        for step in self.wizard.steps:
+            if isinstance(step, DataSourceStep):
+                step_data = step.get_data()
+                return step_data.get("data_source_type", "folders")
+        return "folders"  # Default fallback
+    
+    def _load_filtering_options(self) -> None:
+        """Load available models and strategies from the configured data source."""
+        try:
+            data_source_type = self._get_selected_data_source_type()
+            
+            if data_source_type == 'sqlite':
+                self._load_sqlite_options()
+            elif data_source_type == 'excel':
+                self._load_excel_options()
+            
+        except Exception as e:
+            self.logger.error(f"Error loading filtering options: {e}")
+            # Keep default "All" options if loading fails
+    
+    def _load_sqlite_options(self) -> None:
+        """Load available models and strategies from SQLite database."""
+        try:
+            # Get configuration from ConfigurationStep
+            config_step = None
+            for step in self.wizard.steps:
+                if isinstance(step, ConfigurationStep):
+                    config_step = step
+                    break
+            
+            if not config_step:
+                return
+            
+            # Get database configuration
+            db_path = config_step.db_file_var.get() if config_step.db_file_var else None
+            table_name = config_step.table_var.get() if config_step.table_var else None
+            model_column = config_step.model_column_var.get() if config_step.model_column_var else None
+            strategy_column = config_step.prompting_strategy_column_var.get() if config_step.prompting_strategy_column_var else None
+            
+            if not db_path or not table_name:
+                return
+            
+            import sqlite3
+            
+            with sqlite3.connect(db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Load available models
+                if model_column and model_column != "(None)":
+                    cursor.execute(f"SELECT DISTINCT {model_column} FROM {table_name} WHERE {model_column} IS NOT NULL ORDER BY {model_column}")
+                    models = [row[0] for row in cursor.fetchall() if row[0]]
+                    if models:
+                        self.available_models = models
+                        model_values = ["All Models"] + models
+                        self.model_dropdown.configure(values=model_values)
+                
+                # Load available strategies
+                if strategy_column and strategy_column != "(None)":
+                    cursor.execute(f"SELECT DISTINCT {strategy_column} FROM {table_name} WHERE {strategy_column} IS NOT NULL ORDER BY {strategy_column}")
+                    strategies = [row[0] for row in cursor.fetchall() if row[0]]
+                    if strategies:
+                        self.available_strategies = strategies
+                        strategy_values = ["All Strategies"] + strategies
+                        self.strategy_dropdown.configure(values=strategy_values)
+            
+            self.logger.info(f"Loaded {len(self.available_models)} models and {len(self.available_strategies)} strategies from SQLite")
+            
+        except Exception as e:
+            self.logger.error(f"Error loading SQLite filtering options: {e}")
+    
+    def _load_excel_options(self) -> None:
+        """Load available models and strategies from Excel/CSV file."""
+        try:
+            # Get configuration from ConfigurationStep
+            config_step = None
+            for step in self.wizard.steps:
+                if isinstance(step, ConfigurationStep):
+                    config_step = step
+                    break
+            
+            if not config_step:
+                return
+            
+            # Get Excel configuration
+            file_path = config_step.excel_file_var.get() if config_step.excel_file_var else None
+            sheet_name = config_step.sheet_var.get() if config_step.sheet_var else None
+            model_column = config_step.excel_model_column_var.get() if config_step.excel_model_column_var else None
+            strategy_column = config_step.excel_prompting_strategy_column_var.get() if config_step.excel_prompting_strategy_column_var else None
+            
+            if not file_path:
+                return
+            
+            import pandas as pd
+            import os
+            
+            # Load data
+            file_ext = os.path.splitext(file_path)[1].lower()
+            if file_ext == '.csv':
+                df = pd.read_csv(file_path)
+            else:
+                df = pd.read_excel(file_path, sheet_name=sheet_name)
+            
+            # Load available models
+            if model_column and model_column not in ["None (skip)", "Select file first..."]:
+                if model_column in df.columns:
+                    models = df[model_column].dropna().unique().tolist()
+                    models = [str(m) for m in models if str(m).strip()]
+                    if models:
+                        models.sort()
+                        self.available_models = models
+                        model_values = ["All Models"] + models
+                        self.model_dropdown.configure(values=model_values)
+            
+            # Load available strategies
+            if strategy_column and strategy_column not in ["None (skip)", "Select file first..."]:
+                if strategy_column in df.columns:
+                    strategies = df[strategy_column].dropna().unique().tolist()
+                    strategies = [str(s) for s in strategies if str(s).strip()]
+                    if strategies:
+                        strategies.sort()
+                        self.available_strategies = strategies
+                        strategy_values = ["All Strategies"] + strategies
+                        self.strategy_dropdown.configure(values=strategy_values)
+            
+            self.logger.info(f"Loaded {len(self.available_models)} models and {len(self.available_strategies)} strategies from Excel")
+            
+        except Exception as e:
+            self.logger.error(f"Error loading Excel filtering options: {e}")
+    
+    def on_show(self) -> None:
+        """Called when this step is shown - reload filtering options."""
+        data_source_type = self._get_selected_data_source_type()
+        if data_source_type in ['sqlite', 'excel']:
+            self._load_filtering_options()
+    
+    def validate(self) -> bool:
+        """Validate the filtering configuration."""
+        # This step is always valid since all options are optional
+        return True
+    
+    def get_data(self) -> Dict[str, Any]:
+        """Get the filtering configuration data."""
+        try:
+            data_source_type = self._get_selected_data_source_type()
+            
+            if data_source_type not in ['sqlite', 'excel']:
+                return {}  # No filtering for folder sources
+            
+            selected_model = self.model_var.get() if self.model_var else "All Models"
+            selected_strategy = self.strategy_var.get() if self.strategy_var else "All Strategies"
+            
+            return {
+                "selected_model": selected_model if selected_model != "All Models" else None,
+                "selected_strategy": selected_strategy if selected_strategy != "All Strategies" else None,
+                "available_models": self.available_models,
+                "available_strategies": self.available_strategies
+            }
+        except Exception as e:
+            self.logger.error(f"Error getting filtering step data: {e}")
+            return {}
+
+
 class FinalizationStep(SetupStep):
     """Step 5: Sampling and output format configuration with summary display."""
     
@@ -2557,10 +3059,17 @@ class SetupWizard(ctk.CTkToplevel):
         """
         super().__init__(parent)
         
+        # Initialize logger FIRST (needed by icon methods)
+        self.logger = logging.getLogger(__name__)
+        
+        # Set parent and config early
         self.parent = parent
         self.gui_config = gui_config or GUIConfig()
         self.accessibility_manager = accessibility_manager
-        self.logger = logging.getLogger(__name__)
+        
+        # CRITICAL: Don't set any icon for Setup Wizard - let parent handle everything
+        # This prevents it from interfering with the main window's Dock icon
+        self._ensure_no_icon_interference()
         
         # Wizard state
         self.current_step = 0
@@ -2614,8 +3123,14 @@ class SetupWizard(ctk.CTkToplevel):
     
     def _setup_window(self) -> None:
         """Configure the wizard window properties."""
-        # Set application icon FIRST (before other window properties)
-        self._set_wizard_icon_simple()
+        # Set application name FIRST (critical for macOS dock)
+        import platform
+        if platform.system() == "Darwin":
+            try:
+                self.tk.call('tk', 'appname', 'VAITP-Auditor')
+                self.logger.debug("✅ Setup Wizard: Early application name set")
+            except:
+                pass
         
         # Set window properties
         self.title("VAITP-Auditor: Session Setup")
@@ -2623,110 +3138,950 @@ class SetupWizard(ctk.CTkToplevel):
         self.resizable(True, True)
         self.minsize(650, 550)  # Set minimum size to prevent too small windows
         
-        # Make window modal and always on top
-        self.transient(self.parent)
-        self.lift()  # Bring to front
+        # CRITICAL: Make this window a true child that doesn't affect Dock icon
+        self.transient(self.parent)  # Make it a child window
         
-        # Try to set topmost attribute (may not work on all platforms)
+        # Ensure parent remains the primary window and maintains dock icon
+        if self.parent:
+            self.parent.deiconify()
+            self.parent.lift()
+            self.parent.update_idletasks()
+            # Keep parent focused briefly to maintain Dock icon
+            self.parent.focus_force()
+            
+            # On macOS, ensure parent's icon remains dominant
+            import platform
+            if platform.system() == "Darwin":
+                try:
+                    # Re-assert parent's application name
+                    self.parent.tk.call('tk', 'appname', 'VAITP-Auditor')
+                    self.logger.debug("✅ Re-asserted parent application name")
+                except:
+                    pass
+        
+        # Small delay to ensure parent establishes Dock presence
+        self.after(100, self._show_as_child)
+    
+    def _show_as_child(self):
+        """Show this window as a child after parent is established."""
         try:
-            self.attributes('-topmost', True)  # Keep on top
+            # Now show this window on top but as a child
+            self.deiconify()
+            self.lift()  # Bring to front
+            self.focus_set()  # Focus this window
+            
+            # Make it modal but don't let it take over the Dock
+            self.grab_set()  # Make window modal
+            
+            # Force it to be recognized as a child window
+            if self.parent:
+                try:
+                    # Use window manager hints to make it a dialog
+                    self.wm_attributes('-type', 'dialog')
+                except:
+                    pass
+                
+                try:
+                    # Set window class to match parent
+                    parent_class = self.parent.wm_class()
+                    if parent_class:
+                        self.wm_class(parent_class[0], parent_class[1])
+                except:
+                    pass
+            
+            self.logger.debug("✅ Setup Wizard: Shown as child window")
+            
         except Exception as e:
-            self.logger.debug(f"Could not set topmost attribute: {e}")
+            self.logger.debug(f"Setup Wizard: Error showing as child: {e}")
+            # Fallback to normal display
+            self.deiconify()
+            self.lift()
+            self.focus_set()
+            self.grab_set()
         
-        # Ensure window is visible and focused
-        self.deiconify()  # Make sure it's not minimized
-        self.grab_set()  # Make window modal
-        
-        # Set icon again after window is fully configured (in case it was overridden)
-        self._set_wizard_icon_simple()
+        # Don't set icon - let the main window handle the Dock icon
+    
+    def _ensure_no_icon_interference(self) -> None:
+        """Ensure setup wizard doesn't interfere with main window's icon."""
+        # This method intentionally does NOTHING to prevent any icon interference
+        # The setup wizard should inherit everything from its parent window
+        self.logger.debug("Setup Wizard: Skipping all icon/identity setting to prevent interference")
+        pass
     
     def _set_wizard_icon_simple(self) -> None:
-        """Set Setup Wizard icon - match main window approach."""
+        """COMPLETELY DISABLED: Setup wizard inherits icon from parent."""
+        # This method does absolutely nothing to prevent dock icon conflicts
+        self.logger.debug("Setup Wizard: All icon setting completely disabled")
+        return
+    
+    def _set_macos_wizard_icon(self) -> None:
+        """DISABLED: Don't set macOS icon for setup wizard to avoid dock conflicts."""
+        # This method is intentionally disabled to prevent dock icon conflicts
+        # The setup wizard should inherit the icon from its parent window
+        self.logger.debug("Setup Wizard macOS icon setting disabled to prevent dock conflicts")
+        return
         import os
-        import platform
         import tkinter as tk
         
         try:
-            if platform.system() == "Windows":
-                # Windows: Use same approach as main window
-                current_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-                ico_path = os.path.join(current_dir, "vaitp_auditor", "icon.ico")
-                png_path = os.path.join(current_dir, "vaitp_auditor", "icon.png")
+            # CRITICAL: Set application name for Setup Wizard too (multiple times for persistence)
+            try:
+                self.tk.call('tk', 'appname', 'VAITP-Auditor')
                 
-                self.logger.info(f"Setup Wizard: Setting Windows icon")
-                self.logger.info(f"ICO path: {ico_path}")
-                self.logger.info(f"ICO exists: {os.path.exists(ico_path)}")
+                # Also try to set window title to match
+                self.title('VAITP-Auditor: Session Setup')
                 
-                # Step 0: Set Windows App User Model ID (for taskbar identity)
-                try:
-                    import ctypes
-                    app_id = "VAITPResearch.VAITPAuditor.GUI.1.0"
-                    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
-                    self.logger.debug(f"Setup Wizard: Set App User Model ID")
-                except Exception as e:
-                    self.logger.debug(f"Setup Wizard App User Model ID failed: {e}")
-                
-                # Step 1: Set window class (like main window)
+                # Try to set window class for better identification
                 try:
                     self.wm_class("VAITP-Auditor", "VAITP-Auditor")
-                    self.logger.debug("Setup Wizard: Set window class")
-                except Exception as e:
-                    self.logger.debug(f"Setup Wizard window class failed: {e}")
+                except:
+                    pass
                 
-                # Step 2: Try multiple ICO methods (like main window)
-                icon_set = False
-                
-                if os.path.exists(ico_path):
-                    # Method 1: iconbitmap
-                    try:
-                        self.iconbitmap(ico_path)
-                        self.logger.info("✅ Setup Wizard ICO set with iconbitmap")
-                        icon_set = True
-                    except Exception as e:
-                        self.logger.debug(f"Setup Wizard iconbitmap failed: {e}")
-                    
-                    # Method 2: wm_iconbitmap (backup)
-                    if not icon_set:
-                        try:
-                            self.wm_iconbitmap(ico_path)
-                            self.logger.info("✅ Setup Wizard ICO set with wm_iconbitmap")
-                            icon_set = True
-                        except Exception as e:
-                            self.logger.debug(f"Setup Wizard wm_iconbitmap failed: {e}")
-                
-                # Step 3: PNG fallback (like main window)
-                if os.path.exists(png_path):
-                    try:
-                        photo = tk.PhotoImage(file=png_path)
-                        self.iconphoto(True, photo)
-                        self._wizard_icon_ref = photo  # Prevent GC
-                        self.logger.debug("Setup Wizard PNG icon set")
-                    except Exception as e:
-                        self.logger.debug(f"Setup Wizard PNG failed: {e}")
-                
-                # Step 4: Force update (like main window)
+                # Try to force dock update
                 try:
-                    self.update_idletasks()
-                    self.logger.debug("Setup Wizard: Forced update")
-                except Exception as e:
-                    self.logger.debug(f"Setup Wizard update failed: {e}")
+                    import setproctitle
+                    setproctitle.setproctitle('VAITP-Auditor')
+                except ImportError:
+                    pass
                 
-                if icon_set:
-                    self.logger.info("✅ Setup Wizard Windows icon process completed")
-                else:
-                    self.logger.warning("❌ Setup Wizard Windows icon setting failed")
+                self.logger.debug("✅ Setup Wizard: Set macOS application name")
+            except Exception as e:
+                self.logger.debug(f"Setup Wizard: Failed to set app name: {e}")
+            
+            # Get icon paths
+            current_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            vaitp_dir = os.path.join(current_dir, "vaitp_auditor")
+            icns_path = os.path.join(vaitp_dir, "icon.icns")
+            png_path = os.path.join(vaitp_dir, "icon.png")
+            
+            self.logger.info("Setting macOS icon for Setup Wizard with aggressive approach")
+            
+            # Method 1: Multiple ICNS attempts (most persistent on macOS)
+            if os.path.exists(icns_path):
+                icns_methods = [
+                    ("iconbitmap", lambda: self.iconbitmap(icns_path)),
+                    ("wm_iconbitmap", lambda: self.wm_iconbitmap(icns_path)),
+                    ("iconbitmap default", lambda: self.iconbitmap(default=icns_path)),
+                    ("tk.call iconbitmap", lambda: self.tk.call('wm', 'iconbitmap', self._w, icns_path))
+                ]
+                
+                for method_name, method_call in icns_methods:
+                    try:
+                        method_call()
+                        self.logger.info(f"✅ Setup Wizard: ICNS icon set with {method_name}")
                         
-            else:
-                # macOS/Linux: Use existing system
-                from .icon_utils import set_window_icon
-                success = set_window_icon(self, store_reference=True)
-                if success:
-                    self.logger.debug("✅ Setup wizard icon set successfully")
-                else:
-                    self.logger.debug("❌ Could not set setup wizard icon")
+                        # Force update after successful ICNS setting
+                        self.update_idletasks()
+                        return
+                        
+                    except Exception as e:
+                        self.logger.debug(f"Setup Wizard ICNS {method_name} failed: {e}")
+            
+            # Method 2: Multiple PNG approaches with different sizes
+            if os.path.exists(png_path):
+                try:
+                    # Try PIL for multiple sizes
+                    try:
+                        from PIL import Image, ImageTk
+                        img = Image.open(png_path)
+                        if img.mode not in ['RGBA', 'RGB']:
+                            img = img.convert('RGBA')
+                        
+                        # Create multiple sizes for better compatibility
+                        sizes = [(16, 16), (32, 32), (64, 64)]
+                        icons = []
+                        
+                        for size in sizes:
+                            resized = img.resize(size, Image.Resampling.LANCZOS)
+                            icon = ImageTk.PhotoImage(resized)
+                            icons.append(icon)
+                        
+                        # Try setting with different methods
+                        png_methods = [
+                            ("iconphoto True", lambda: self.iconphoto(True, *icons)),
+                            ("wm_iconphoto True", lambda: self.wm_iconphoto(True, *icons)),
+                            ("tk.call iconphoto", lambda: self.tk.call('wm', 'iconphoto', self._w, '-default', *icons)),
+                            ("single 32x32", lambda: self.iconphoto(True, icons[1]))  # Just 32x32
+                        ]
+                        
+                        for method_name, method_call in png_methods:
+                            try:
+                                method_call()
+                                
+                                # Store references to prevent garbage collection
+                                self._macos_wizard_icons = icons
+                                
+                                self.logger.info(f"✅ Setup Wizard: PNG icon set with {method_name}")
+                                
+                                # Force update
+                                self.update_idletasks()
+                                return
+                                
+                            except Exception as e:
+                                self.logger.debug(f"Setup Wizard PNG {method_name} failed: {e}")
+                        
+                    except ImportError:
+                        # Fallback to tkinter PhotoImage
+                        icon_photo = tk.PhotoImage(file=png_path)
+                        
+                        try:
+                            self.iconphoto(True, icon_photo)
+                            self._macos_wizard_icon = icon_photo
+                            self.logger.info("✅ Setup Wizard: tkinter PNG icon set")
+                            self.update_idletasks()
+                            return
+                        except Exception as e:
+                            self.logger.debug(f"Setup Wizard tkinter PNG failed: {e}")
+                            
+                except Exception as e:
+                    self.logger.debug(f"Setup Wizard PNG processing failed: {e}")
+            
+            self.logger.warning("❌ Setup Wizard: All macOS icon methods failed")
+            
+        except Exception as e:
+            self.logger.error(f"Setup Wizard macOS icon error: {e}")
+    
+    def _try_inherit_parent_icon(self) -> None:
+        """Try to inherit the icon from the parent window."""
+        try:
+            if self.parent and hasattr(self.parent, '_macos_icon_persistent'):
+                # Try to copy the parent's icon
+                parent_icon = self.parent._macos_icon_persistent
+                self.iconphoto(True, parent_icon)
+                self._inherited_icon = parent_icon
+                self.logger.debug("✅ Setup Wizard: Inherited icon from parent")
+                return
+            
+            # Alternative: Try to get the parent's icon via tk calls
+            if self.parent:
+                try:
+                    # Force the same application name as parent
+                    self.tk.call('tk', 'appname', 'VAITP-Auditor')
+                    
+                    # Try to copy window class
+                    try:
+                        parent_class = self.parent.wm_class()
+                        if parent_class:
+                            self.wm_class(parent_class[0], parent_class[1])
+                            self.logger.debug("✅ Setup Wizard: Copied window class from parent")
+                    except:
+                        pass
+                        
+                except Exception as e:
+                    self.logger.debug(f"Setup Wizard: Failed to inherit from parent: {e}")
                     
         except Exception as e:
-            self.logger.error(f"❌ Setup Wizard icon error: {e}")
+            self.logger.debug(f"Setup Wizard: Error inheriting parent icon: {e}")
+    
+    def _force_use_main_window_icon(self) -> None:
+        """Force the Setup Wizard to use the main window's icon by making it a child window."""
+        try:
+            import platform
+            
+            if platform.system() == "Darwin":
+                # Try to make this window behave like the main window for icon purposes
+                try:
+                    # Force the same window manager properties as the main window
+                    if self.parent:
+                        # Copy all icon-related properties from parent
+                        try:
+                            # Get parent's window info
+                            parent_wm_class = self.parent.wm_class()
+                            if parent_wm_class:
+                                self.wm_class(parent_wm_class[0], parent_wm_class[1])
+                                self.logger.debug("✅ Setup Wizard: Copied parent window class")
+                        except:
+                            pass
+                        
+                        # Force same application name at tk level
+                        try:
+                            self.tk.call('tk', 'appname', 'VAITP-Auditor')
+                            # Also try to set it at the window level
+                            self.tk.call('wm', 'title', self._w, 'VAITP-Auditor: Session Setup')
+                        except:
+                            pass
+                        
+                        # Try to make this window appear as part of the main application
+                        try:
+                            # Set the same group as parent (macOS window grouping)
+                            self.tk.call('wm', 'group', self._w, self.parent._w)
+                            self.logger.debug("✅ Setup Wizard: Set window group to parent")
+                        except Exception as e:
+                            self.logger.debug(f"Setup Wizard: Window grouping failed: {e}")
+                            
+                except Exception as e:
+                    self.logger.debug(f"Setup Wizard: Force main window icon failed: {e}")
+                    
+        except Exception as e:
+            self.logger.debug(f"Setup Wizard: Error forcing main window icon: {e}")
+    
+    def _set_icon_using_utilities(self) -> None:
+        """Set icon using the existing icon utilities directly."""
+        try:
+            from .icon_utils import set_window_icon, get_icon_path, initialize_platform_icons
+            import os
+            import platform
+            
+            self.logger.info("Setup Wizard: Using icon utilities directly")
+            
+            # Initialize platform icons first
+            try:
+                initialize_platform_icons()
+                self.logger.debug("Setup Wizard: Platform icons initialized")
+            except Exception as e:
+                self.logger.debug(f"Setup Wizard: Platform icon init failed: {e}")
+            
+            # Try the standard icon utility
+            success = set_window_icon(self, store_reference=True)
+            if success:
+                self.logger.info("✅ Setup Wizard: Icon set using utilities")
+                return
+            
+            # If that fails, try manual approach with icon utilities
+            icon_path = get_icon_path()
+            if os.path.exists(icon_path):
+                self.logger.debug(f"Setup Wizard: Icon path found: {icon_path}")
+                
+                if platform.system() == "Darwin":
+                    # Try macOS-specific approach
+                    try:
+                        # For macOS, try ICNS first
+                        base_dir = os.path.dirname(icon_path)
+                        icns_path = os.path.join(base_dir, "icon.icns")
+                        
+                        if os.path.exists(icns_path):
+                            # Direct iconbitmap with ICNS
+                            self.iconbitmap(icns_path)
+                            self.logger.info("✅ Setup Wizard: ICNS icon set via utilities")
+                            return
+                    except Exception as e:
+                        self.logger.debug(f"Setup Wizard: ICNS via utilities failed: {e}")
+                
+                # Try PNG approach
+                try:
+                    import tkinter as tk
+                    from PIL import Image, ImageTk
+                    
+                    # Load and resize icon
+                    img = Image.open(icon_path)
+                    if img.mode not in ['RGBA', 'RGB']:
+                        img = img.convert('RGBA')
+                    
+                    # Create appropriate size for window icon
+                    img_resized = img.resize((32, 32), Image.Resampling.LANCZOS)
+                    icon_photo = ImageTk.PhotoImage(img_resized)
+                    
+                    # Set icon
+                    self.iconphoto(True, icon_photo)
+                    
+                    # Store reference
+                    self._utility_icon_ref = icon_photo
+                    
+                    self.logger.info("✅ Setup Wizard: PNG icon set via utilities")
+                    return
+                    
+                except ImportError:
+                    # Try without PIL
+                    try:
+                        icon_photo = tk.PhotoImage(file=icon_path)
+                        self.iconphoto(True, icon_photo)
+                        self._utility_icon_ref = icon_photo
+                        self.logger.info("✅ Setup Wizard: tkinter PNG icon set via utilities")
+                        return
+                    except Exception as e:
+                        self.logger.debug(f"Setup Wizard: tkinter PNG via utilities failed: {e}")
+                except Exception as e:
+                    self.logger.debug(f"Setup Wizard: PIL PNG via utilities failed: {e}")
+            
+            self.logger.warning("❌ Setup Wizard: All utility-based icon methods failed")
+            
+        except Exception as e:
+            self.logger.error(f"Setup Wizard: Error using icon utilities: {e}")
+    
+    def _final_icon_attempt(self) -> None:
+        """Final attempt to set the icon after all window configuration is complete."""
+        try:
+            import platform
+            import os
+            
+            if platform.system() == "Darwin":
+                self.logger.info("Setup Wizard: Final icon attempt for macOS")
+                
+                # Get icon paths
+                current_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+                vaitp_dir = os.path.join(current_dir, "vaitp_auditor")
+                icns_path = os.path.join(vaitp_dir, "icon.icns")
+                
+                if os.path.exists(icns_path):
+                    # Try the most direct approach possible
+                    try:
+                        # Force update first
+                        self.update_idletasks()
+                        
+                        # Set application name again
+                        self.tk.call('tk', 'appname', 'VAITP-Auditor')
+                        
+                        # Set icon with absolute path
+                        abs_icns_path = os.path.abspath(icns_path)
+                        self.iconbitmap(abs_icns_path)
+                        
+                        # Force another update
+                        self.update_idletasks()
+                        
+                        self.logger.info("✅ Setup Wizard: Final ICNS attempt successful")
+                        return
+                        
+                    except Exception as e:
+                        self.logger.debug(f"Setup Wizard: Final ICNS attempt failed: {e}")
+                
+                # If ICNS fails, try to copy from parent one more time
+                if self.parent and hasattr(self.parent, 'tk'):
+                    try:
+                        # Force the same application identity as parent
+                        parent_app_name = self.parent.tk.call('tk', 'appname')
+                        if parent_app_name:
+                            self.tk.call('tk', 'appname', parent_app_name)
+                            self.logger.debug(f"Setup Wizard: Copied parent app name: {parent_app_name}")
+                    except Exception as e:
+                        self.logger.debug(f"Setup Wizard: Parent app name copy failed: {e}")
+                        
+        except Exception as e:
+            self.logger.debug(f"Setup Wizard: Final icon attempt error: {e}")
+    
+    def _set_icon_immediately(self) -> None:
+        """Set icon immediately after window creation, before any other setup."""
+        try:
+            import platform
+            import os
+            
+            if platform.system() == "Darwin":
+                # Get icon path
+                current_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+                vaitp_dir = os.path.join(current_dir, "vaitp_auditor")
+                icns_path = os.path.join(vaitp_dir, "icon.icns")
+                
+                if os.path.exists(icns_path):
+                    try:
+                        # Set application name first
+                        self.tk.call('tk', 'appname', 'VAITP-Auditor')
+                        
+                        # Set icon immediately with absolute path
+                        abs_icns_path = os.path.abspath(icns_path)
+                        self.iconbitmap(abs_icns_path)
+                        
+                        # Also try wm_iconbitmap as backup
+                        try:
+                            self.wm_iconbitmap(abs_icns_path)
+                        except:
+                            pass
+                        
+                        self.logger.debug("✅ Setup Wizard: Immediate ICNS icon set")
+                        return
+                        
+                    except Exception as e:
+                        self.logger.debug(f"Setup Wizard: Immediate ICNS failed: {e}")
+                
+                # Try PNG as fallback
+                png_path = os.path.join(vaitp_dir, "icon.png")
+                if os.path.exists(png_path):
+                    try:
+                        import tkinter as tk
+                        icon_photo = tk.PhotoImage(file=png_path)
+                        self.iconphoto(True, icon_photo)
+                        self._immediate_icon_ref = icon_photo  # Store reference
+                        self.logger.debug("✅ Setup Wizard: Immediate PNG icon set")
+                        return
+                    except Exception as e:
+                        self.logger.debug(f"Setup Wizard: Immediate PNG failed: {e}")
+                        
+        except Exception as e:
+            self.logger.debug(f"Setup Wizard: Immediate icon setting error: {e}")
+    
+    def _set_icon_simple_copy(self) -> None:
+        """Simple icon setting - copy exactly what works for main window."""
+        try:
+            import platform
+            import os
+            
+            if platform.system() == "Darwin":
+                # Get icon paths (same as main window)
+                base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+                vaitp_dir = os.path.join(base_dir, "vaitp_auditor")
+                icns_path = os.path.join(vaitp_dir, "icon.icns")
+                png_path = os.path.join(vaitp_dir, "icon.png")
+                
+                # Set application name (same as main window)
+                try:
+                    self.tk.call('tk', 'appname', 'VAITP-Auditor')
+                except:
+                    pass
+                
+                # Try ICNS first (same as main window)
+                if os.path.exists(icns_path):
+                    try:
+                        self.wm_iconbitmap(icns_path)
+                        self.logger.debug("✅ Setup Wizard: Simple ICNS icon set")
+                        return
+                    except Exception as e:
+                        self.logger.debug(f"Setup Wizard: Simple ICNS failed: {e}")
+                
+                # Try PNG fallback (same as main window)
+                if os.path.exists(png_path):
+                    try:
+                        from PIL import Image, ImageTk
+                        img = Image.open(png_path)
+                        if img.mode not in ['RGBA', 'RGB']:
+                            img = img.convert('RGBA')
+                        img_resized = img.resize((64, 64), Image.Resampling.LANCZOS)
+                        icon_photo = ImageTk.PhotoImage(img_resized)
+                        self.wm_iconphoto(True, icon_photo)
+                        self._simple_icon_ref = icon_photo
+                        self.logger.debug("✅ Setup Wizard: Simple PNG icon set")
+                        return
+                    except Exception as e:
+                        self.logger.debug(f"Setup Wizard: Simple PNG failed: {e}")
+                        
+        except Exception as e:
+            self.logger.debug(f"Setup Wizard: Simple icon setting error: {e}")
+    
+    def _set_early_wizard_identity(self) -> None:
+        """Set early application identity for the wizard (same as main window)."""
+        import platform
+        import os
+        
+        try:
+            system = platform.system()
+            
+            if system == "Darwin":
+                # macOS: Set process title and application identity early
+                try:
+                    # Method 1: Set process title using setproctitle if available
+                    try:
+                        import setproctitle
+                        setproctitle.setproctitle('VAITP-Auditor')
+                        self.logger.debug("✅ Setup Wizard: Set process title using setproctitle")
+                    except ImportError:
+                        # Method 2: Modify sys.argv[0] as fallback
+                        import sys
+                        if hasattr(sys, 'argv') and sys.argv:
+                            original_argv0 = sys.argv[0]
+                            sys.argv[0] = 'VAITP-Auditor'
+                            self.logger.debug("✅ Setup Wizard: Modified sys.argv[0] for process name")
+                
+                    # Method 3: Set environment variables that affect application identity
+                    os.environ['CFBundleName'] = 'VAITP-Auditor'
+                    os.environ['CFBundleDisplayName'] = 'VAITP-Auditor'
+                    self.logger.debug("✅ Setup Wizard: Set macOS bundle environment variables")
+                    
+                except Exception as e:
+                    self.logger.debug(f"Setup Wizard: Early macOS identity setting failed: {e}")
+            
+        except Exception as e:
+            self.logger.debug(f"Setup Wizard: Error in early application identity setting: {e}")
+    
+    def _force_application_identity(self) -> None:
+        """Force the Setup Wizard to be treated as part of the main VAITP-Auditor application."""
+        try:
+            import platform
+            
+            if platform.system() == "Darwin":
+                # Method 1: Set the same application name as the main window
+                try:
+                    self.tk.call('tk', 'appname', 'VAITP-Auditor')
+                    self.logger.debug("✅ Setup Wizard: Forced application name")
+                except Exception as e:
+                    self.logger.debug(f"Setup Wizard: Application name forcing failed: {e}")
+                
+                # Method 2: Try to make this window a child of the main window
+                if self.parent:
+                    try:
+                        # Set window group to parent (makes it part of the same app)
+                        self.tk.call('wm', 'group', self._w, self.parent._w)
+                        self.logger.debug("✅ Setup Wizard: Set as child of main window")
+                    except Exception as e:
+                        self.logger.debug(f"Setup Wizard: Window grouping failed: {e}")
+                    
+                    # Copy window class from parent
+                    try:
+                        parent_class = self.parent.wm_class()
+                        if parent_class:
+                            self.wm_class(parent_class[0], parent_class[1])
+                            self.logger.debug("✅ Setup Wizard: Copied parent window class")
+                    except Exception as e:
+                        self.logger.debug(f"Setup Wizard: Window class copy failed: {e}")
+                
+                # Method 3: Set window attributes to match main application
+                try:
+                    # Make this window appear as the main application window
+                    self.tk.call('wm', 'attributes', self._w, '-titlepath', 'VAITP-Auditor')
+                except Exception as e:
+                    self.logger.debug(f"Setup Wizard: Title path setting failed: {e}")
+                
+        except Exception as e:
+            self.logger.debug(f"Setup Wizard: Error forcing application identity: {e}")
+    
+    def _try_inherit_parent_icon(self) -> None:
+        """Try to inherit the icon from the parent window."""
+        try:
+            import platform
+            
+            if platform.system() == "Darwin" and self.parent:
+                # Try to copy the parent's icon references
+                icon_attrs = [
+                    '_macos_icons_persistent', 
+                    '_macos_icon_persistent', 
+                    '_simple_icon_ref', 
+                    '_macos_icon_32',
+                    '_macos_icon_tk_persistent'
+                ]
+                
+                for attr in icon_attrs:
+                    if hasattr(self.parent, attr):
+                        try:
+                            parent_icon = getattr(self.parent, attr)
+                            if parent_icon:
+                                if isinstance(parent_icon, list):
+                                    # Multiple icons
+                                    self.wm_iconphoto(True, *parent_icon)
+                                    self._inherited_icons = parent_icon
+                                else:
+                                    # Single icon
+                                    self.wm_iconphoto(True, parent_icon)
+                                    self._inherited_icon = parent_icon
+                                
+                                self.logger.info(f"✅ Setup Wizard: Inherited icon from parent ({attr})")
+                                return
+                        except Exception as e:
+                            self.logger.debug(f"Setup Wizard: Failed to inherit {attr}: {e}")
+                
+                # Try to force the same application name as parent
+                try:
+                    self.tk.call('tk', 'appname', 'VAITP-Auditor')
+                    
+                    # Try to copy window class from parent
+                    try:
+                        parent_class = self.parent.wm_class()
+                        if parent_class:
+                            self.wm_class(parent_class[0], parent_class[1])
+                            self.logger.debug("✅ Setup Wizard: Copied window class from parent")
+                    except Exception as e:
+                        self.logger.debug(f"Setup Wizard: Window class copy failed: {e}")
+                        
+                    # Try to set window group to parent (macOS window grouping)
+                    try:
+                        self.tk.call('wm', 'group', self._w, self.parent._w)
+                        self.logger.debug("✅ Setup Wizard: Set window group to parent")
+                    except Exception as e:
+                        self.logger.debug(f"Setup Wizard: Window grouping failed: {e}")
+                        
+                except Exception as e:
+                    self.logger.debug(f"Setup Wizard: Failed to inherit from parent: {e}")
+                    
+        except Exception as e:
+            self.logger.debug(f"Setup Wizard: Error inheriting parent icon: {e}")
+    
+    def _set_wizard_icon_aggressive(self) -> None:
+        """DISABLED: Don't set Setup Wizard icon aggressively to avoid dock conflicts."""
+        # This method is intentionally disabled to prevent dock icon conflicts
+        # The setup wizard should inherit the icon from its parent window
+        self.logger.debug("Setup Wizard aggressive icon setting disabled to prevent dock conflicts")
+        return
+        try:
+            import platform
+            import os
+            import tkinter as tk
+            
+            system = platform.system()
+            
+            # Get icon paths
+            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            vaitp_dir = os.path.join(base_dir, "vaitp_auditor")
+            icns_path = os.path.join(vaitp_dir, "icon.icns")
+            png_path = os.path.join(vaitp_dir, "icon.png")
+            ico_path = os.path.join(vaitp_dir, "icon.ico")
+            
+            self.logger.info(f"Setup Wizard: Setting {system} icon - ICNS: {os.path.exists(icns_path)}, PNG: {os.path.exists(png_path)}, ICO: {os.path.exists(ico_path)}")
+            
+            if system == "Darwin":
+                # macOS: Don't set icon aggressively - let parent handle it
+                self.logger.debug("Setup Wizard: Skipping aggressive macOS icon setting to prevent dock conflicts")
+            elif system == "Windows":
+                # Windows: Use ICO format for best results
+                self._set_windows_wizard_icon_aggressive(ico_path, png_path)
+            else:
+                # Linux: Use PNG with PhotoImage
+                self._set_linux_wizard_icon_aggressive(png_path)
+            
+        except Exception as e:
+            self.logger.error(f"Setup Wizard: Error setting icon aggressively: {e}")
+    
+    def _set_macos_wizard_icon_aggressive(self, icns_path: str, png_path: str) -> None:
+        """DISABLED: Don't set macOS icon aggressively for setup wizard to avoid dock conflicts."""
+        # This method is intentionally disabled to prevent dock icon conflicts
+        # The setup wizard should inherit the icon from its parent window
+        self.logger.debug("Setup Wizard aggressive macOS icon setting disabled to prevent dock conflicts")
+        return
+        try:
+            import tkinter as tk
+            import os
+            
+            # Method 1: Set application name MULTIPLE times with different approaches
+            app_name_methods = [
+                lambda: self.tk.call('tk', 'appname', 'VAITP-Auditor'),
+                lambda: self.tk.call('::tk::mac::standardAboutPanel'),
+                lambda: self.wm_title('VAITP-Auditor: Session Setup'),
+                lambda: self.title('VAITP-Auditor: Session Setup')
+            ]
+            
+            for i, method in enumerate(app_name_methods):
+                try:
+                    method()
+                    self.logger.debug(f"✅ Setup Wizard: macOS app name method {i+1} succeeded")
+                except Exception as e:
+                    self.logger.debug(f"Setup Wizard: macOS app name method {i+1} failed: {e}")
+            
+            # Method 2: Try to copy icon from parent window first
+            try:
+                if self.parent and hasattr(self.parent, '_macos_icons_persistent'):
+                    parent_icons = self.parent._macos_icons_persistent
+                    self.wm_iconphoto(True, *parent_icons)
+                    self._wizard_icons_persistent = parent_icons
+                    self.logger.info("✅ Setup Wizard: Copied icons from parent window")
+                    return
+            except Exception as e:
+                self.logger.debug(f"Setup Wizard: Failed to copy parent icons: {e}")
+            
+            # Method 3: Try ICNS with multiple approaches
+            if os.path.exists(icns_path):
+                icns_methods = [
+                    lambda: self.wm_iconbitmap(icns_path),
+                    lambda: self.iconbitmap(icns_path),
+                    lambda: self.iconbitmap(default=icns_path),
+                    lambda: self.tk.call('wm', 'iconbitmap', '.', icns_path),
+                    lambda: self.tk.call('wm', 'iconbitmap', self._w, icns_path)
+                ]
+                
+                for i, method in enumerate(icns_methods):
+                    try:
+                        method()
+                        self.logger.info(f"✅ Setup Wizard: macOS ICNS method {i+1} succeeded")
+                        # Don't make icon persistent - disabled to prevent dock conflicts
+                        self.logger.debug("Setup Wizard: Skipping icon persistence to prevent dock conflicts")
+                        return  # Success, exit early
+                    except Exception as e:
+                        self.logger.debug(f"Setup Wizard: macOS ICNS method {i+1} failed: {e}")
+            
+            # Method 4: PNG fallback with PhotoImage
+            if os.path.exists(png_path):
+                try:
+                    # Try PIL first for better quality
+                    try:
+                        from PIL import Image, ImageTk
+                        img = Image.open(png_path)
+                        if img.mode not in ['RGBA', 'RGB']:
+                            img = img.convert('RGBA')
+                        
+                        # Create multiple sizes for different contexts
+                        sizes = [(32, 32), (64, 64), (128, 128)]
+                        icons = []
+                        
+                        for size in sizes:
+                            resized = img.resize(size, Image.Resampling.LANCZOS)
+                            icon = ImageTk.PhotoImage(resized)
+                            icons.append(icon)
+                        
+                        # Try to set with different methods
+                        png_methods = [
+                            lambda: self.wm_iconphoto(True, *icons),
+                            lambda: self.iconphoto(True, icons[1]),  # 64x64
+                            lambda: self.tk.call('wm', 'iconphoto', '.', '-default', icons[0]),
+                            lambda: self.tk.call('wm', 'iconphoto', self._w, icons[1])
+                        ]
+                        
+                        for i, method in enumerate(png_methods):
+                            try:
+                                method()
+                                # Store references to prevent garbage collection
+                                self._wizard_icons_persistent = icons
+                                self.logger.info(f"✅ Setup Wizard: macOS PNG method {i+1} succeeded")
+                                return
+                            except Exception as e:
+                                self.logger.debug(f"Setup Wizard: macOS PNG method {i+1} failed: {e}")
+                                
+                    except ImportError:
+                        # Fallback to tkinter PhotoImage
+                        icon_photo = tk.PhotoImage(file=png_path)
+                        self.iconphoto(True, icon_photo)
+                        self._wizard_icon_tk_persistent = icon_photo
+                        self.logger.info("✅ Setup Wizard: macOS tkinter PNG succeeded")
+                        return
+                        
+                except Exception as e:
+                    self.logger.debug(f"Setup Wizard: macOS PNG fallback failed: {e}")
+            
+            self.logger.warning("❌ Setup Wizard: All macOS icon methods failed")
+            
+        except Exception as e:
+            self.logger.error(f"Setup Wizard: Error in aggressive macOS icon setting: {e}")
+    
+    def _make_wizard_icon_persistent(self, icns_path: str) -> None:
+        """DISABLED: Don't make Setup Wizard icon persistent to avoid dock conflicts."""
+        # This method is intentionally disabled to prevent dock icon conflicts
+        self.logger.debug("Setup Wizard icon persistence disabled to prevent dock conflicts")
+        return
+        try:
+            # Schedule multiple reinforcement attempts
+            delays = [100, 500, 1000, 2000]  # milliseconds
+            
+            # Don't schedule icon reinforcement - disabled to prevent dock conflicts
+            self.logger.debug("Setup Wizard: Skipping icon reinforcement scheduling to prevent dock conflicts")
+                
+        except Exception as e:
+            self.logger.debug(f"Setup Wizard: Error setting up icon persistence: {e}")
+    
+    def _reinforce_wizard_icon_with_path(self, icns_path: str) -> None:
+        """DISABLED: Don't reinforce Setup Wizard icon to avoid dock conflicts."""
+        # This method is intentionally disabled to prevent dock icon conflicts
+        self.logger.debug("Setup Wizard icon reinforcement disabled to prevent dock conflicts")
+        return
+        try:
+            # Re-set application name
+            self.tk.call('tk', 'appname', 'VAITP-Auditor')
+            # Re-set icon
+            self.wm_iconbitmap(icns_path)
+            self.logger.debug("✅ Setup Wizard: Reinforced icon and app name")
+        except Exception as e:
+            self.logger.debug(f"Setup Wizard: Icon reinforcement failed: {e}")
+    
+    def _reinforce_wizard_icon(self) -> None:
+        """DISABLED: Don't reinforce Setup Wizard icon to avoid dock conflicts."""
+        # This method is intentionally disabled to prevent dock icon conflicts
+        self.logger.debug("Setup Wizard icon reinforcement disabled to prevent dock conflicts")
+        return
+        try:
+            import os
+            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            vaitp_dir = os.path.join(base_dir, "vaitp_auditor")
+            icns_path = os.path.join(vaitp_dir, "icon.icns")
+            
+            # Re-set application name
+            self.tk.call('tk', 'appname', 'VAITP-Auditor')
+            # Re-set icon if ICNS exists
+            if os.path.exists(icns_path):
+                self.wm_iconbitmap(icns_path)
+                self.logger.debug("✅ Setup Wizard: Reinforced icon and app name")
+        except Exception as e:
+            self.logger.debug(f"Setup Wizard: Icon reinforcement failed: {e}")
+    
+    def _force_dock_update(self) -> None:
+        """Force macOS Dock to update the icon."""
+        try:
+            import platform
+            import subprocess
+            
+            if platform.system() == "Darwin":
+                # Method 1: Force application name and icon again
+                try:
+                    self.tk.call('tk', 'appname', 'VAITP-Auditor')
+                    
+                    # Re-apply icon
+                    import os
+                    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+                    vaitp_dir = os.path.join(base_dir, "vaitp_auditor")
+                    icns_path = os.path.join(vaitp_dir, "icon.icns")
+                    
+                    if os.path.exists(icns_path):
+                        self.wm_iconbitmap(icns_path)
+                        
+                    self.logger.debug("✅ Setup Wizard: Forced Dock update")
+                except Exception as e:
+                    self.logger.debug(f"Setup Wizard: Dock update failed: {e}")
+                
+                # Method 2: Try to refresh the Dock (gentle approach)
+                try:
+                    # Force window to update
+                    self.update_idletasks()
+                    self.lift()
+                    self.focus_force()
+                except Exception as e:
+                    self.logger.debug(f"Setup Wizard: Window refresh failed: {e}")
+                    
+        except Exception as e:
+            self.logger.debug(f"Setup Wizard: Error forcing Dock update: {e}")
+    
+    def _set_windows_wizard_icon_aggressive(self, ico_path: str, png_path: str) -> None:
+        """DISABLED: Don't set Windows icon for Setup Wizard to avoid conflicts."""
+        # This method is intentionally disabled to prevent icon conflicts
+        self.logger.debug("Setup Wizard Windows icon setting disabled to prevent conflicts")
+        return
+        try:
+            import os
+            # Try ICO first (native Windows format)
+            if os.path.exists(ico_path):
+                ico_methods = [
+                    lambda: self.wm_iconbitmap(ico_path),
+                    lambda: self.iconbitmap(ico_path),
+                    lambda: self.iconbitmap(default=ico_path),
+                    lambda: self.wm_iconbitmap(default=ico_path)
+                ]
+                
+                for i, method in enumerate(ico_methods):
+                    try:
+                        method()
+                        self.logger.info(f"✅ Setup Wizard: Windows ICO method {i+1} succeeded")
+                        return
+                    except Exception as e:
+                        self.logger.debug(f"Setup Wizard: Windows ICO method {i+1} failed: {e}")
+            
+            # PNG fallback
+            if os.path.exists(png_path):
+                try:
+                    from PIL import Image, ImageTk
+                    img = Image.open(png_path)
+                    if img.mode not in ['RGBA', 'RGB']:
+                        img = img.convert('RGBA')
+                    
+                    # Windows works well with 32x32
+                    icon_32 = img.resize((32, 32), Image.Resampling.LANCZOS)
+                    icon_photo = ImageTk.PhotoImage(icon_32)
+                    
+                    self.wm_iconphoto(True, icon_photo)
+                    self._wizard_windows_icon_persistent = icon_photo
+                    self.logger.info("✅ Setup Wizard: Windows PNG method succeeded")
+                    
+                except Exception as e:
+                    self.logger.debug(f"Setup Wizard: Windows PNG method failed: {e}")
+            
+        except Exception as e:
+            self.logger.debug(f"Setup Wizard: Error in Windows icon setting: {e}")
+    
+    def _set_linux_wizard_icon_aggressive(self, png_path: str) -> None:
+        """DISABLED: Don't set Linux icon for Setup Wizard to avoid conflicts."""
+        # This method is intentionally disabled to prevent icon conflicts
+        self.logger.debug("Setup Wizard Linux icon setting disabled to prevent conflicts")
+        return
+        try:
+            import os
+            if os.path.exists(png_path):
+                try:
+                    from PIL import Image, ImageTk
+                    img = Image.open(png_path)
+                    if img.mode not in ['RGBA', 'RGB']:
+                        img = img.convert('RGBA')
+                    
+                    # Linux typically works well with 48x48
+                    icon_48 = img.resize((48, 48), Image.Resampling.LANCZOS)
+                    icon_photo = ImageTk.PhotoImage(icon_48)
+                    
+                    self.wm_iconphoto(True, icon_photo)
+                    self._wizard_linux_icon_persistent = icon_photo
+                    self.logger.info("✅ Setup Wizard: Linux PNG method succeeded")
+                    
+                except Exception as e:
+                    self.logger.debug(f"Setup Wizard: Linux PNG method failed: {e}")
+                    
+        except Exception as e:
+            self.logger.debug(f"Setup Wizard: Error in Linux icon setting: {e}")
         
         # Center on screen since parent might be hidden
         self.update_idletasks()
@@ -2777,7 +4132,10 @@ class SetupWizard(ctk.CTkToplevel):
         # Step 3: Data source configuration
         self.steps.append(ConfigurationStep(self))
         
-        # Step 4: Finalization (sampling and output format)
+        # Step 4: Filtering (model and strategy selection for SQLite/Excel)
+        self.steps.append(FilteringStep(self))
+        
+        # Step 5: Finalization (sampling and output format)
         self.steps.append(FinalizationStep(self))
     
     def _create_layout(self) -> None:

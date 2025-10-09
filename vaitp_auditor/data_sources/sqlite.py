@@ -27,6 +27,8 @@ class SQLiteSource(DataSource):
         self._expected_code_column: Optional[str] = None
         self._input_code_column: Optional[str] = None
         self._identifier_column: Optional[str] = None
+        self._model_column: Optional[str] = None
+        self._prompting_strategy_column: Optional[str] = None
         self._connection: Optional[sqlite3.Connection] = None
         self._max_retries = 3
         self._retry_delay = 1.0  # seconds
@@ -112,12 +114,14 @@ class SQLiteSource(DataSource):
             })
             return False
 
-    def load_data(self, sample_percentage: float) -> List[CodePair]:
+    def load_data(self, sample_percentage: float, selected_model: Optional[str] = None, selected_strategy: Optional[str] = None) -> List[CodePair]:
         """
         Load code pairs from the configured SQLite database.
         
         Args:
             sample_percentage: Percentage of data to sample (1-100).
+            selected_model: Optional specific model to filter by.
+            selected_strategy: Optional specific prompting strategy to filter by.
             
         Returns:
             List[CodePair]: List of code pairs ready for review.
@@ -130,17 +134,80 @@ class SQLiteSource(DataSource):
         self._validate_sample_percentage(sample_percentage)
 
         try:
-            # Load all data first
-            all_data = self._load_all_data()
+            # Get counts for better logging
+            total_count = self.get_total_count()
+            filtered_count = self.get_filtered_count(selected_model, selected_strategy)
+            
+            filter_info = []
+            if selected_model:
+                filter_info.append(f"model={selected_model}")
+            if selected_strategy:
+                filter_info.append(f"strategy={selected_strategy}")
+            filter_str = f" (filtered by {', '.join(filter_info)})" if filter_info else ""
+            
+            self._logger.info(f"Database contains {total_count} total records")
+            if filter_info:
+                self._logger.info(f"After filtering{filter_str}: {filtered_count} records available")
+                if filtered_count != total_count:
+                    self._logger.warning(f"Filtering reduced dataset from {total_count} to {filtered_count} records")
+            else:
+                self._logger.info(f"No filtering applied - using all {total_count} records")
+            
+            # Load all data first (with optional filtering)
+            all_data = self._load_all_data(selected_model, selected_strategy)
             
             # Cache total count
             self._total_count = len(all_data)
             
+            # Debug logging for sampling
+            self._logger.info(f"After loading and validation: {len(all_data)} valid records available")
+            
             # Sample data if needed
             sampled_data = self._sample_data(all_data, sample_percentage)
             
-            self._logger.info(f"Loaded {len(sampled_data)} code pairs from SQLite database "
-                            f"({sample_percentage}% of {self._total_count} total)")
+            # Debug logging for sampling result
+            expected_sample_size = max(1, int(len(all_data) * sample_percentage / 100))
+            self._logger.info(f"Sampling {sample_percentage}% of {len(all_data)} records: "
+                            f"expected {expected_sample_size}, got {len(sampled_data)}")
+            
+            self._logger.info(f"Final result: loaded {len(sampled_data)} code pairs from SQLite database "
+                            f"({sample_percentage}% of {len(all_data)} valid records{filter_str})")
+            
+            # Add explanation if the result is different from what might be expected
+            if filter_info and len(all_data) < filtered_count:
+                self._logger.warning(f"Note: Some records were excluded during validation. "
+                                   f"Started with {filtered_count} filtered records, "
+                                   f"but only {len(all_data)} passed validation.")
+            
+            if sample_percentage < 100:
+                naive_expectation = max(1, int(total_count * sample_percentage / 100))
+                if len(sampled_data) != naive_expectation:
+                    self._logger.info(f"Sampling explanation: {sample_percentage}% of {total_count} total records would be {naive_expectation}, "
+                                    f"but filtering and validation resulted in {len(sampled_data)} records")
+                    
+            # Print user-friendly summary
+            print(f"\n📊 Data Loading Summary:")
+            print(f"   • Total records in database: {total_count}")
+            if filter_info:
+                print(f"   • Records after filtering{filter_str}: {filtered_count}")
+                if len(all_data) < filtered_count:
+                    excluded_count = filtered_count - len(all_data)
+                    print(f"   • Records excluded (empty/invalid data): {excluded_count}")
+                    print(f"   • Valid records after validation: {len(all_data)}")
+            print(f"   • Sample percentage requested: {sample_percentage}%")
+            print(f"   • Final records selected for review: {len(sampled_data)}")
+            
+            # Explain why the result might be different from expectations
+            if filter_info:
+                naive_expectation = max(1, int(total_count * sample_percentage / 100))
+                if len(sampled_data) != naive_expectation:
+                    print(f"   • Note: Expected {sample_percentage}% of {total_count} total = {naive_expectation}, but got {len(sampled_data)}")
+                    print(f"     This is because filtering reduced the available dataset")
+                    
+                if len(all_data) < filtered_count:
+                    print(f"   • Note: {excluded_count} records were excluded due to missing identifiers")
+                    print(f"     Empty generated_code is included as reviewable failure cases")
+            print()
             
             return sampled_data
 
@@ -148,7 +215,9 @@ class SQLiteSource(DataSource):
             self._log_error_with_context(e, {
                 'db_path': self._db_path,
                 'table_name': self._table_name,
-                'sample_percentage': sample_percentage
+                'sample_percentage': sample_percentage,
+                'selected_model': selected_model,
+                'selected_strategy': selected_strategy
             })
             raise DataSourceError(f"Failed to load data from SQLite database: {e}")
 
@@ -181,6 +250,56 @@ class SQLiteSource(DataSource):
                 'table_name': self._table_name
             })
             raise DataSourceError(f"Failed to get total count from SQLite database: {e}")
+    
+    def get_filtered_count(self, selected_model: Optional[str] = None, selected_strategy: Optional[str] = None) -> int:
+        """
+        Get the count of records after filtering but before sampling.
+        
+        Args:
+            selected_model: Optional specific model to filter by.
+            selected_strategy: Optional specific prompting strategy to filter by.
+            
+        Returns:
+            int: Count of records matching the filter criteria.
+        """
+        self._validate_configured()
+        
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # Build WHERE clause for filtering
+                where_conditions = []
+                query_params = []
+                
+                if selected_model and self._model_column:
+                    where_conditions.append(f"{self._model_column} = ?")
+                    query_params.append(selected_model)
+                
+                if selected_strategy and self._prompting_strategy_column:
+                    where_conditions.append(f"{self._prompting_strategy_column} = ?")
+                    query_params.append(selected_strategy)
+                
+                where_clause = f" WHERE {' AND '.join(where_conditions)}" if where_conditions else ""
+                query = f"SELECT COUNT(*) FROM {self._table_name}{where_clause}"
+                
+                cursor.execute(query, query_params)
+                count = cursor.fetchone()[0]
+                
+                self._logger.debug(f"Filtered count query: {query}")
+                self._logger.debug(f"Query parameters: {query_params}")
+                self._logger.debug(f"Filtered count result: {count}")
+                
+                return count
+                
+        except Exception as e:
+            self._log_error_with_context(e, {
+                'db_path': self._db_path,
+                'table_name': self._table_name,
+                'selected_model': selected_model,
+                'selected_strategy': selected_strategy
+            })
+            raise DataSourceError(f"Failed to get filtered count from SQLite database: {e}")
 
     def _get_connection(self) -> sqlite3.Connection:
         """
@@ -335,14 +454,20 @@ class SQLiteSource(DataSource):
             print(f"Error: Configuration validation failed: {e}")
             return False
 
-    def _load_all_data(self) -> List[CodePair]:
+    def _load_all_data(self, selected_model: Optional[str] = None, selected_strategy: Optional[str] = None) -> List[CodePair]:
         """
         Load all data from the configured database table.
+        
+        Args:
+            selected_model: Optional specific model to filter by.
+            selected_strategy: Optional specific prompting strategy to filter by.
         
         Returns:
             List[CodePair]: List of all code pairs.
         """
         code_pairs = []
+        skipped_count = 0
+        processed_count = 0
         
         try:
             with self._get_connection() as conn:
@@ -354,11 +479,34 @@ class SQLiteSource(DataSource):
                     columns.append(self._expected_code_column)
                 if self._input_code_column:
                     columns.append(self._input_code_column)
+                if self._model_column:
+                    columns.append(self._model_column)
+                if self._prompting_strategy_column:
+                    columns.append(self._prompting_strategy_column)
                 
-                query = f"SELECT {', '.join(columns)} FROM {self._table_name}"
-                cursor.execute(query)
+                # Build WHERE clause for filtering
+                where_conditions = []
+                query_params = []
+                
+                if selected_model and self._model_column:
+                    where_conditions.append(f"{self._model_column} = ?")
+                    query_params.append(selected_model)
+                
+                if selected_strategy and self._prompting_strategy_column:
+                    where_conditions.append(f"{self._prompting_strategy_column} = ?")
+                    query_params.append(selected_strategy)
+                
+                where_clause = f" WHERE {' AND '.join(where_conditions)}" if where_conditions else ""
+                query = f"SELECT {', '.join(columns)} FROM {self._table_name}{where_clause}"
+                
+                # Debug logging for query
+                self._logger.debug(f"Executing query: {query}")
+                self._logger.debug(f"Query parameters: {query_params}")
+                
+                cursor.execute(query, query_params)
                 
                 for row in cursor.fetchall():
+                    processed_count += 1
                     try:
                         # Get row data by column name (row is a sqlite3.Row object)
                         identifier = str(row[0]) if row[0] else ""  # First column is identifier
@@ -377,11 +525,31 @@ class SQLiteSource(DataSource):
                         if self._input_code_column and len(row) > col_index:
                             if row[col_index]:
                                 input_code = str(row[col_index])
+                            col_index += 1
                         
-                        # Skip rows with empty identifier or generated code
-                        if not identifier or not generated_code:
-                            self._logger.warning(f"Skipping row with empty identifier or generated code")
+                        # Handle model column (fifth column if present)
+                        model_name = None
+                        if self._model_column and len(row) > col_index:
+                            if row[col_index]:
+                                model_name = str(row[col_index])
+                            col_index += 1
+                        
+                        # Handle prompting strategy column (sixth column if present)
+                        prompting_strategy = None
+                        if self._prompting_strategy_column and len(row) > col_index:
+                            if row[col_index]:
+                                prompting_strategy = str(row[col_index])
+                        
+                        # Skip rows with empty identifier (but allow empty generated_code for review)
+                        if not identifier:
+                            skipped_count += 1
+                            self._logger.warning(f"Skipping row {processed_count} with empty identifier")
                             continue
+                        
+                        # Allow empty generated_code - it's a valid failure case for review
+                        if not generated_code:
+                            generated_code = ""  # Ensure it's an empty string, not None
+                            self._logger.debug(f"Row {processed_count} has empty generated_code - including for review as failure case")
                         
                         # Debug logging for input code
                         if input_code:
@@ -396,7 +564,11 @@ class SQLiteSource(DataSource):
                             'identifier_column': self._identifier_column,
                             'generated_code_column': self._generated_code_column,
                             'expected_code_column': self._expected_code_column,
-                            'input_code_column': self._input_code_column
+                            'input_code_column': self._input_code_column,
+                            'model_column': self._model_column,
+                            'prompting_strategy_column': self._prompting_strategy_column,
+                            'model_name': model_name,
+                            'prompting_strategy': prompting_strategy
                         }
                         
                         code_pair = CodePair(
@@ -410,15 +582,20 @@ class SQLiteSource(DataSource):
                         if self._validate_code_pair(code_pair):
                             code_pairs.append(code_pair)
                         else:
-                            self._logger.warning(f"Skipping invalid code pair with identifier: {identifier}")
+                            skipped_count += 1
+                            self._logger.warning(f"Skipping invalid code pair with identifier: {identifier} "
+                                               f"(validation failed)")
                             
                     except Exception as e:
-                        self._logger.error(f"Error processing row: {e}")
+                        skipped_count += 1
+                        self._logger.error(f"Error processing row {processed_count}: {e}")
                         continue
                         
         except Exception as e:
             raise DataSourceError(f"Failed to load data from database: {e}")
         
+        self._logger.info(f"_load_all_data completed: processed {processed_count} rows, "
+                          f"loaded {len(code_pairs)} valid code pairs, skipped {skipped_count} invalid rows")
         return code_pairs
 
     def __del__(self):

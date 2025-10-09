@@ -10,10 +10,11 @@ The VAITP-Auditor GUI provides a modern desktop interface for manual code review
 2. [Setup Wizard](#setup-wizard)
 3. [Main Review Window](#main-review-window)
 4. [Keyboard Shortcuts](#keyboard-shortcuts)
-5. [Data Sources](#data-sources)
-6. [Review Workflow](#review-workflow)
-7. [Accessibility Features](#accessibility-features)
-8. [Troubleshooting](#troubleshooting)
+5. [Menu Features](#menu-features)
+6. [Data Sources](#data-sources)
+7. [Review Workflow](#review-workflow)
+8. [Accessibility Features](#accessibility-features)
+9. [Troubleshooting](#troubleshooting)
 
 ## Getting Started
 
@@ -193,6 +194,10 @@ Choose the most appropriate classification for each code pair:
 - **5**: Partial Success
 - **6**: Custom
 
+### Additional Actions
+- **V**: Flag Vulnerable Input
+- **N**: Flag NOT Vulnerable Expected
+
 ### Navigation
 - **Tab**: Move between interface elements
 - **Enter**: Submit verdict (when comment field is focused)
@@ -207,6 +212,47 @@ Choose the most appropriate classification for each code pair:
 - **Page Up/Down**: Scroll by page
 - **Home/End**: Go to beginning/end of line
 - **Ctrl+Home/End**: Go to beginning/end of document
+
+### Menu Actions
+- **Ctrl+S**: Save Review Process
+- **Ctrl+O**: Open Review Process
+- **Ctrl+R**: Restart Review Process
+- **Ctrl+G**: Generate verification prompt and copy to clipboard
+- **Ctrl+Q**: Exit application
+
+## Menu Features
+
+### Tools Menu
+
+#### Generate Verification Prompt
+The "Generate verification prompt and copy to clipboard" feature (Ctrl+G) creates a structured prompt for external AI analysis:
+
+**Purpose**: Generate a comprehensive prompt that can be used with any LLM system (ChatGPT, Claude, etc.) to get a second opinion on vulnerability analysis.
+
+**What it does**:
+1. Extracts the current Input Code, Expected Code, and Generated Code from the review window
+2. Creates a structured prompt asking the AI to analyze each code snippet for vulnerabilities
+3. Copies the complete prompt to your system clipboard
+4. Shows a confirmation dialog when successful
+
+**Prompt Structure**:
+The generated prompt includes:
+- Clear instructions for vulnerability analysis
+- All three code snippets (Input, Expected, Generated) in separate sections
+- Structured response format requesting:
+  - YES/NO vulnerability assessment for each code snippet
+  - Detailed explanations of any vulnerabilities found
+  - Severity ratings (Critical/High/Medium/Low)
+  - Specific fix recommendations
+  - Comparative summary between the three code versions
+
+**Usage**:
+1. Load a code pair in the review window
+2. Use **Tools → Generate verification prompt** or press **Ctrl+G**
+3. Paste the clipboard content into your preferred LLM system
+4. Use the AI's analysis to inform your manual review decision
+
+**Note**: This feature requires actual code to be loaded. It will show a warning if only placeholder text is present.
 
 ## Data Sources
 

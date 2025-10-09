@@ -73,20 +73,43 @@ def set_global_application_icon(root_window) -> bool:
                 root_window.tk.call('tk', 'appname', 'VAITP-Auditor')
                 logger.debug("Set application name to VAITP-Auditor")
                 
-                # Use PNG for global icon (better compatibility)
+                # Try ICNS format first (native macOS format)
                 base_dir = os.path.dirname(os.path.dirname(__file__))
-                png_path = os.path.join(base_dir, "icon.png")
+                icns_path = os.path.join(base_dir, "icon.icns")
                 
+                if os.path.exists(icns_path):
+                    try:
+                        # Use iconbitmap for ICNS files on macOS
+                        root_window.wm_iconbitmap(icns_path)
+                        logger.debug("Set macOS global icon using ICNS format")
+                        return True
+                    except Exception as e:
+                        logger.debug(f"ICNS method failed: {e}")
+                
+                # Fallback to PNG with PhotoImage
+                png_path = os.path.join(base_dir, "icon.png")
                 if os.path.exists(png_path):
-                    icon_photo = tk.PhotoImage(file=png_path)
-                    root_window.tk.call('wm', 'iconphoto', root_window._w, '-default', icon_photo)
-                    # Store reference to prevent garbage collection
-                    root_window._global_app_icon = icon_photo
-                    logger.debug("Set global application icon for macOS Dock")
-                    return True
+                    try:
+                        # Create a properly sized icon for macOS
+                        icon_photo = tk.PhotoImage(file=png_path)
+                        
+                        # Try both methods for maximum compatibility
+                        try:
+                            root_window.wm_iconphoto(True, icon_photo)
+                            logger.debug("Set macOS global icon using wm_iconphoto")
+                        except:
+                            root_window.tk.call('wm', 'iconphoto', root_window._w, '-default', icon_photo)
+                            logger.debug("Set macOS global icon using tk.call")
+                        
+                        # Store reference to prevent garbage collection
+                        root_window._global_app_icon = icon_photo
+                        return True
+                    except Exception as e:
+                        logger.debug(f"PNG PhotoImage method failed: {e}")
                 else:
                     logger.debug("PNG file not found for global icon")
-                    return False
+                
+                return False
                     
             except Exception as e:
                 logger.debug(f"Error setting macOS global icon: {e}")
@@ -225,16 +248,8 @@ def load_application_icons() -> Optional[List]:
             logger.debug(f"Icon file not found at: {icon_path}")
             return None
         
-        # Check if we have a Tkinter root window
-        try:
-            import tkinter as tk
-            root = tk._default_root
-            if root is None:
-                # Create a temporary root window for image creation
-                temp_root = tk.Tk()
-                temp_root.withdraw()  # Hide it
-        except:
-            pass
+        # Check if we have a Tkinter root window - avoid creating temporary windows
+        # PIL/ImageTk can work without a root window for basic operations
         
         # Load the original image with minimal processing
         icon_image = Image.open(icon_path)
@@ -672,17 +687,40 @@ def _set_windows_icon(window: Union[tk.Tk, tk.Toplevel], icon_path: str, store_r
 def _set_macos_icon(window: Union[tk.Tk, tk.Toplevel], icon_path: str, store_reference: bool) -> bool:
     """Set icon on macOS with ICNS format preference."""
     try:
+        base_dir = os.path.dirname(os.path.dirname(__file__))
+        
         # Try ICNS format first (native macOS format)
-        if icon_path.endswith('.icns'):
+        icns_path = os.path.join(base_dir, "icon.icns")
+        if os.path.exists(icns_path):
             try:
-                window.wm_iconbitmap(icon_path)
+                window.wm_iconbitmap(icns_path)
                 logger.debug("macOS icon set using ICNS format")
                 return True
             except Exception as e:
                 logger.debug(f"Failed to set ICNS icon: {e}")
         
-        # Fallback to PhotoImage method
-        return _set_photoimage_icon(window, icon_path, store_reference)
+        # Try to create ICNS if it doesn't exist
+        if not os.path.exists(icns_path):
+            created_icns = create_icns_file()
+            if created_icns and os.path.exists(created_icns):
+                try:
+                    window.wm_iconbitmap(created_icns)
+                    logger.debug("macOS icon set using newly created ICNS")
+                    return True
+                except Exception as e:
+                    logger.debug(f"Failed to set newly created ICNS icon: {e}")
+        
+        # Fallback to PhotoImage method with PNG
+        png_path = os.path.join(base_dir, "icon.png")
+        if os.path.exists(png_path):
+            return _set_photoimage_icon(window, png_path, store_reference)
+        
+        # Try the original icon_path as final fallback
+        if icon_path != png_path and os.path.exists(icon_path):
+            return _set_photoimage_icon(window, icon_path, store_reference)
+        
+        logger.debug("No suitable icon found for macOS")
+        return False
         
     except Exception as e:
         logger.debug(f"Error setting macOS icon: {e}")
@@ -702,8 +740,43 @@ def _set_photoimage_icon(window: Union[tk.Tk, tk.Toplevel], icon_path: str, stor
     """Set icon using PhotoImage method (cross-platform fallback)."""
     try:
         import tkinter as tk
+        import platform
         
-        # Try tkinter PhotoImage first (works without PIL for PNG)
+        # Try PIL first for better quality and cross-platform compatibility
+        try:
+            from PIL import Image, ImageTk
+            
+            # Load and process icon
+            icon_image = Image.open(icon_path)
+            if icon_image.mode not in ['RGBA', 'RGB']:
+                icon_image = icon_image.convert('RGBA')
+            
+            # Create appropriately sized icon based on platform
+            if platform.system() == "Darwin":
+                # macOS prefers 64x64 for window icons
+                icon_resized = icon_image.resize((64, 64), Image.Resampling.LANCZOS)
+            else:
+                # Windows and Linux work well with 32x32
+                icon_resized = icon_image.resize((32, 32), Image.Resampling.LANCZOS)
+            
+            icon_photo = ImageTk.PhotoImage(icon_resized)
+            
+            # Set the icon
+            window.wm_iconphoto(True, icon_photo)
+            
+            # Store reference to prevent garbage collection
+            if store_reference:
+                window._vaitp_icon = icon_photo
+            
+            logger.debug(f"Icon set using PIL PhotoImage method ({icon_resized.size})")
+            return True
+            
+        except ImportError:
+            logger.debug("PIL not available, trying tkinter PhotoImage")
+        except Exception as e:
+            logger.debug(f"PIL PhotoImage failed: {e}")
+        
+        # Fallback to tkinter PhotoImage (works without PIL for PNG)
         if icon_path.endswith('.png'):
             try:
                 icon_photo = tk.PhotoImage(file=icon_path)
@@ -719,32 +792,8 @@ def _set_photoimage_icon(window: Union[tk.Tk, tk.Toplevel], icon_path: str, stor
                 # Try to find a smaller PNG or create one
                 return _try_alternative_png_icon(window, store_reference)
         
-        # Try PIL if available (for non-PNG formats or resizing)
-        try:
-            from PIL import Image, ImageTk
-            
-            # Load and resize icon
-            icon_image = Image.open(icon_path)
-            if icon_image.mode not in ['RGBA', 'RGB']:
-                icon_image = icon_image.convert('RGBA')
-            
-            # Create 64x64 icon for title bar
-            icon_64 = icon_image.resize((64, 64), Image.Resampling.LANCZOS)
-            icon_photo = ImageTk.PhotoImage(icon_64)
-            
-            # Set the icon
-            window.wm_iconphoto(True, icon_photo)
-            
-            # Store reference to prevent garbage collection
-            if store_reference:
-                window._vaitp_icon = icon_photo
-            
-            logger.debug("Icon set using PIL PhotoImage method")
-            return True
-            
-        except ImportError:
-            logger.debug("PIL not available for non-PNG icon formats")
-            return False
+        logger.debug("No suitable PhotoImage method worked")
+        return False
                 
     except Exception as e:
         logger.debug(f"Error setting PhotoImage icon: {e}")

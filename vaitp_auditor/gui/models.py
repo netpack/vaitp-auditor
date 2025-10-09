@@ -286,6 +286,13 @@ DEFAULT_VERDICT_BUTTONS: List[VerdictButtonConfig] = [
         key_binding="p",
         color_theme="info",
         tooltip="Code generation was partially successful but incomplete"
+    ),
+    VerdictButtonConfig(
+        verdict_id="FLAG_NOT_VULNERABLE_EXPECTED",
+        display_text="Flag NOT Vulnerable Expected",
+        key_binding="n",
+        color_theme="warning",
+        tooltip="Flag the expected code as NOT vulnerable (safe code that should not be flagged)"
     )
 ]
 

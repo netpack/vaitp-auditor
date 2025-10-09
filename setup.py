@@ -72,6 +72,7 @@ setup(
             "pygments>=2.10.0",
             "pillow>=8.0.0",
             "psutil>=5.8.0",
+            "setproctitle>=1.2.0",  # For better process naming on macOS/Linux
         ],
         "dev": [
             "pytest>=6.0.0",
@@ -86,6 +87,7 @@ setup(
             "pygments>=2.10.0",
             "pillow>=8.0.0",
             "psutil>=5.8.0",
+            "setproctitle>=1.2.0",  # For better process naming on macOS/Linux
             "pytest>=6.0.0",
             "pytest-cov>=2.10.0",
             "black>=21.0.0",
@@ -97,6 +99,8 @@ setup(
     entry_points={
         "console_scripts": [
             "vaitp-auditor=vaitp_auditor.cli:main",
+        ],
+        "gui_scripts": [
             "vaitp-auditor-gui=vaitp_auditor.gui.gui_app:main",
         ],
     },
