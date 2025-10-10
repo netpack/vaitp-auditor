@@ -269,8 +269,8 @@ class TestProgressTrackingIntegration(unittest.TestCase):
         progress_calls = self.main_window.header_frame.progress_bar.set.call_args_list
         self.assertEqual(progress_calls[-1][0][0], 1.0)  # 100% when total is 0
     
-    def test_window_title_updates_with_progress(self):
-        """Test that window title updates correctly with progress changes."""
+    def test_window_title_remains_consistent(self):
+        """Test that window title remains consistent and is not changed by the review process."""
         # Create progress info
         progress_info = ProgressInfo(
             current=5,
@@ -284,18 +284,18 @@ class TestProgressTrackingIntegration(unittest.TestCase):
             # Update progress
             self.main_window.update_progress(progress_info)
             
-            # Verify title was updated with experiment name
-            mock_title.assert_called_with("VAITP-Auditor - Reviewing: title_test_experiment")
+            # Verify title remains consistent
+            mock_title.assert_called_with("VAITP-Auditor - Main Review")
         
         # Test loading state title
         with patch.object(self.main_window, 'title') as mock_title:
             self.main_window.set_loading_state("Loading custom message")
-            mock_title.assert_called_with("VAITP-Auditor - Loading...")
+            mock_title.assert_called_with("VAITP-Auditor - Main Review")
         
         # Test completion state title
         with patch.object(self.main_window, 'title') as mock_title:
             self.main_window.set_completion_state("completed_experiment")
-            mock_title.assert_called_with("VAITP-Auditor - Complete: completed_experiment")
+            mock_title.assert_called_with("VAITP-Auditor - Main Review")
 
 
 class TestHeaderFrameStandalone(unittest.TestCase):

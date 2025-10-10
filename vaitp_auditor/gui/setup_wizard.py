@@ -3109,6 +3109,43 @@ class SetupWizard(ctk.CTkToplevel):
         self._show_current_step()
         self.logger.info("Setup Wizard initialization complete")
     
+    def _center_window(self) -> None:
+        """Center the setup wizard window on screen."""
+        try:
+            # Ensure window is fully updated before calculating position
+            self.update_idletasks()
+            
+            # Get screen dimensions
+            screen_width = self.winfo_screenwidth()
+            screen_height = self.winfo_screenheight()
+            
+            # Calculate center position
+            x = (screen_width // 2) - (self.gui_config.wizard_width // 2)
+            y = (screen_height // 2) - (self.gui_config.wizard_height // 2)
+            
+            # Ensure window is visible on screen
+            x = max(0, min(x, screen_width - self.gui_config.wizard_width))
+            y = max(0, min(y, screen_height - self.gui_config.wizard_height))
+            
+            # Set the centered position
+            self.geometry(f"+{x}+{y}")
+            
+            # Force window updates and focus
+            self.update()  # Process all pending events
+            self.focus_set()
+            self.focus_force()
+            
+            # Make a system beep to indicate the window appeared
+            try:
+                self.bell()
+            except Exception as e:
+                self.logger.debug(f"Could not make system beep: {e}")
+            
+            self.logger.info(f"Setup Wizard centered at {x},{y} with size {self.gui_config.wizard_width}x{self.gui_config.wizard_height}")
+            
+        except Exception as e:
+            self.logger.error(f"Error centering setup wizard window: {e}")
+    
     def update_cached_data(self, data: Dict[str, Any]) -> None:
         """Safely update the cached data.
         
@@ -3161,6 +3198,9 @@ class SetupWizard(ctk.CTkToplevel):
         
         # Small delay to ensure parent establishes Dock presence
         self.after(100, self._show_as_child)
+        
+        # Additional fallback centering after a longer delay to ensure it works
+        self.after(300, self._center_window)
     
     def _show_as_child(self):
         """Show this window as a child after parent is established."""
@@ -3189,7 +3229,10 @@ class SetupWizard(ctk.CTkToplevel):
                 except:
                     pass
             
-            self.logger.debug("✅ Setup Wizard: Shown as child window")
+            # NOW center the window after it's fully set up
+            self._center_window()
+            
+            self.logger.debug("✅ Setup Wizard: Shown as child window and centered")
             
         except Exception as e:
             self.logger.debug(f"Setup Wizard: Error showing as child: {e}")
@@ -3198,6 +3241,8 @@ class SetupWizard(ctk.CTkToplevel):
             self.lift()
             self.focus_set()
             self.grab_set()
+            # Still try to center even in fallback
+            self._center_window()
         
         # Don't set icon - let the main window handle the Dock icon
     
@@ -4083,40 +4128,11 @@ class SetupWizard(ctk.CTkToplevel):
         except Exception as e:
             self.logger.debug(f"Setup Wizard: Error in Linux icon setting: {e}")
         
-        # Center on screen since parent might be hidden
-        self.update_idletasks()
-        
-        # Get screen dimensions
-        screen_width = self.winfo_screenwidth()
-        screen_height = self.winfo_screenheight()
-        
-        # Calculate center position
-        x = (screen_width // 2) - (self.gui_config.wizard_width // 2)
-        y = (screen_height // 2) - (self.gui_config.wizard_height // 2)
-        
-        # Ensure window is visible on screen
-        x = max(0, min(x, screen_width - self.gui_config.wizard_width))
-        y = max(0, min(y, screen_height - self.gui_config.wizard_height))
-        
-        self.geometry(f"+{x}+{y}")
-        
-        self.logger.info(f"Setup Wizard positioned at {x},{y} with size {self.gui_config.wizard_width}x{self.gui_config.wizard_height}")
-        
         # Handle window close
         self.protocol("WM_DELETE_WINDOW", self._on_cancel)
         
-        # Focus the window and make sure it's visible
-        self.update()  # Process all pending events
-        self.focus_set()
-        self.focus_force()
-        
-        # Make a system beep to indicate the window appeared
-        try:
-            self.bell()
-        except Exception as e:
-            self.logger.debug(f"Could not make system beep: {e}")
-        
-        self.logger.info("Setup Wizard window setup complete and focused")
+        # Initial positioning will be done after window is fully set up
+        self.logger.info("Setup Wizard window properties configured")
     
     def _create_steps(self) -> None:
         """Create and initialize all wizard steps."""

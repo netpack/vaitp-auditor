@@ -2543,8 +2543,8 @@ Please provide a brief summary comparing the three code snippets and any overall
         # Update header frame
         self.header_frame.update_progress(progress_info)
         
-        # Keep window title simple
-        self.title("VAITP-Auditor")
+        # Keep window title consistent
+        self.title("VAITP-Auditor - Main Review")
     
     def set_paused_state(self, is_paused: bool) -> None:
         """Set the paused state of the review window.
@@ -2559,7 +2559,7 @@ Please provide a brief summary comparing the three code snippets and any overall
         if is_paused:
             self.title("⏸️ VAITP-Auditor - SESSION PAUSED ⏸️")
         else:
-            self.title("VAITP-Auditor")
+            self.title("VAITP-Auditor - Main Review")
     
     def get_current_progress(self) -> Optional[ProgressInfo]:
         """Get current progress information from header frame.
@@ -2576,7 +2576,7 @@ Please provide a brief summary comparing the three code snippets and any overall
             message: Loading message to display
         """
         self.header_frame.set_loading_state(message)
-        self.title("VAITP-Auditor")
+        self.title("VAITP-Auditor - Main Review")
         
         # Disable actions during loading
         self.actions_frame.set_buttons_enabled(False)
@@ -2588,7 +2588,7 @@ Please provide a brief summary comparing the three code snippets and any overall
             experiment_name: Name of the completed experiment
         """
         self.header_frame.set_completion_state(experiment_name)
-        self.title("VAITP-Auditor")
+        self.title("VAITP-Auditor - Main Review")
         
         # Disable verdict buttons but keep control buttons enabled
         for button in self.actions_frame.verdict_buttons.values():

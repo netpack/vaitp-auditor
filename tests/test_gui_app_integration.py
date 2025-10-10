@@ -123,7 +123,7 @@ class TestGUIApplicationIntegration(unittest.TestCase):
                 
                 # Verify main window setup
                 mock_root.deiconify.assert_called_once()
-                mock_root.title.assert_called_once_with(f"VAITP-Auditor - Reviewing: {self.test_session_config.experiment_name}")
+                mock_root.title.assert_called_once_with("VAITP-Auditor")
                 
                 # Verify main review window creation
                 mock_window_class.assert_called_once_with(mock_root)
